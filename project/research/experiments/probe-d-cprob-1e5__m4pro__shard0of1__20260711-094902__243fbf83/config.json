@@ -1,0 +1,50 @@
+{
+  "label": "probe-d-cprob-1e5",
+  "notes": "Timing probe only (13 seeds, 1 per worker): cost of cprob=1e-5.",
+  "depth": 6,
+  "adaptive": false,
+  "stop_tile": 2048,
+  "max_moves": 6000,
+  "seeds": {
+    "base": 1000,
+    "count": 13
+  },
+  "weights": {
+    "BOT2048_FARM_EMPTY_W": 340,
+    "BOT2048_FARM_MERGE_W": 140,
+    "BOT2048_FARM_CORNER_W": 640,
+    "BOT2048_FARM_EDGE_W": 0,
+    "BOT2048_FARM_STAIR_W": 120,
+    "BOT2048_FARM_SNAKE_W": 0.25,
+    "BOT2048_FARM_SNAKE_RATIO": 0.85,
+    "BOT2048_FARM_CORNER_RANK_W": 160,
+    "BOT2048_FARM_CONVEX_W": 80,
+    "BOT2048_FARM_LATE_EMPTY_W": 120,
+    "BOT2048_FARM_LATE_GRAD_MULT": 2.0,
+    "BOT2048_FARM_LATE_CORNER_RANK_W": 320,
+    "BOT2048_FARM_HOARD_TRIGGER": 99,
+    "BOT2048_CPROB_THRESH": 1e-05
+  },
+  "engine": {
+    "binary": "<repo>/project/tools/engine2048/engine2048",
+    "build_sha256": "6127de09731f3947a73021ef4f24dd59465c944f5acdf5420a25a4733951427a",
+    "source_sha256": "faae1910126f068314f796d9bb35190eeeee3b3ff029f80d2d33b098ac7e6929",
+    "protocol": "1",
+    "go": "go1.26.5",
+    "BOT2048_FARM_EMPTY_W": "340",
+    "BOT2048_FARM_MERGE_W": "140",
+    "BOT2048_FARM_CORNER_W": "640",
+    "BOT2048_FARM_EDGE_W": "0",
+    "BOT2048_FARM_STAIR_W": "120",
+    "BOT2048_FARM_SNAKE_W": "0.25",
+    "BOT2048_FARM_SNAKE_RATIO": "0.85",
+    "BOT2048_FARM_CORNER_RANK_W": "160",
+    "BOT2048_FARM_CONVEX_W": "80",
+    "BOT2048_FARM_LATE_EMPTY_W": "120",
+    "BOT2048_FARM_LATE_GRAD_MULT": "2",
+    "BOT2048_FARM_LATE_CORNER_RANK_W": "320",
+    "BOT2048_FARM_HOARD_TRIGGER": "99",
+    "BOT2048_CPROB_THRESH": "1e-05"
+  },
+  "p4_effective": 0.1
+}

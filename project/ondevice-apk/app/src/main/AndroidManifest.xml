@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Minimal permission footprint on purpose (banking phone):
+  - FOREGROUND_SERVICE + FOREGROUND_SERVICE_MEDIA_PROJECTION: required to run the
+    capture service in the foreground on Android 10+/14+.
+  - POST_NOTIFICATIONS: the mandatory ongoing notification for a FGS.
+  NO INTERNET (the socket is a local abstract LocalServerSocket reached via
+  `adb forward`), NO storage. MediaProjection is the ONLY screen-capture path.
+
+  SwipeAccessibilityService (below) is the ONE accessibility service, added
+  solely to inject the per-move swipe on-device (dispatchGesture) and so drop
+  the ~60 ms `adb shell input swipe` process spawn per move. It is OFF by
+  default: it does nothing until the operator enables it once in
+  Settings then Accessibility then "bot2048 sampler". It reads no screen
+  content (onAccessibilityEvent is a no-op); it only emits gestures. Banking
+  apps can scan for enabled accessibility services, so this is an explicit,
+  opt-in trade-off; leaving it disabled keeps the host on the input-swipe
+  fallback with no behavioural change.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="ai.bot2048.sampler">
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:allowBackup="false"
+        android:label="bot2048 sampler">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".SamplerService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <!--
+          Opt-in on-device swipe injector. BIND_ACCESSIBILITY_SERVICE is required
+          so only the system can bind it; the operator turns it on once in
+          Settings. canPerformGestures="true" (in the referenced config) is what
+          allows dispatchGesture().
+        -->
+        <service
+            android:name=".SwipeAccessibilityService"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/swipe_accessibility_config" />
+        </service>
+    </application>
+</manifest>

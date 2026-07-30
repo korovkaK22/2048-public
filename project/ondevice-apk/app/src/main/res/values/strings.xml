@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="swipe_accessibility_description">Injects the 2048 bot\'s pre-computed swipe gestures on-device, replacing the per-move adb input-swipe spawn. Emits gestures only; does not read screen content. Enable only for a bot2048 run.</string>
+</resources>

@@ -1,0 +1,79 @@
+# ===== SECRETS — NEVER COMMIT =====
+.secrets/
+*.env
+!*.env.example
+!.env.example
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# ===== Databases / telemetry (large, regenerable) =====
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+
+# ===== Runtime / throwaway =====
+tmp/
+logs/
+screens/
+# рантайм-прапорці (tgnotify /pause пише control/pause.flag)
+control/
+
+# ===== Large binaries / build outputs (Windows tools — re-download per platform) =====
+**/platform-tools/
+project/tools/ffmpeg/
+project/tools/scrcpy/
+*.exe
+*.dll
+*~
+*.apk
+# Ваги n-tuple мережі + run/ рушія (багатомегабайтні блоби).
+# Чемпіонські ваги роздаються через GitHub Release — див. scripts/fetch_weights.sh
+*.bin
+project/tools/ntuple/run/
+# PGO-профіль: містить абсолютні шляхи збірки, час і відбитки системних DLL.
+# Регенерується локально — див. project/tools/ntuple/BUILD.md
+*.pgo
+# Android build-артефакти та машинно-локальний конфіг SDK.
+# УВАГА: патерн зі слешем прив'язується до кореня репо, тому шлях мусить бути повним
+# (раніше `ondevice-apk/local.properties` не ловив `project/ondevice-apk/...`).
+project/ondevice-apk/**/build/
+project/ondevice-apk/**/.gradle/
+local.properties
+.gradle/
+
+# ===== Локальний стан інструментів (не для публічного репо) =====
+.claude/
+CLAUDE.md
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+*.stackdump
+
+# NOTE: project/data/calibration.json is intentionally kept (needed at runtime).
+# Test fixtures under project/tests/**/*.png are intentionally kept.
+
+# Сирі записи з екрану (приватність + вага репо; висновки живуть у .md звітах)
+project/research/**/raw/
+
+# Вкладені git-worktree
+worktrees/
+
+# ===== IDE =====
+.idea/
+
+# ===== repo-root scratchpad (local throwaway; conclusions go to docs/) =====
+scratchpad/

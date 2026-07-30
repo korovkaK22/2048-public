@@ -1,0 +1,287 @@
+{
+  "source_db": "project/data/games.db (gitignored)",
+  "kind": "live",
+  "schema": "one JSON object per match in results.jsonl",
+  "note": "Full move/spawn replay data is NOT here (too large for git); it lives in the live-matches archive zip. This file holds per-match telemetry: score, moves, duration, engine eval speed (eval_ms percentiles), moves/s.",
+  "overall": {
+    "matches": 263,
+    "matches_with_moves": 219,
+    "total_moves": 318364,
+    "best_score": 48136,
+    "median_score": 29870.0,
+    "mean_eval_ms_over_matches": 56.956,
+    "mean_moves_per_s": 2.555
+  },
+  "by_experiment": {
+    "campaign-best": {
+      "matches": 7,
+      "matches_with_moves": 7,
+      "total_moves": 8342,
+      "best_score": 33364,
+      "median_score": 28504.0,
+      "mean_eval_ms_over_matches": 2.287,
+      "mean_moves_per_s": 3.048
+    },
+    "fast-win-demo": {
+      "matches": 2,
+      "matches_with_moves": 2,
+      "total_moves": 622,
+      "best_score": 9436,
+      "median_score": 9436.0,
+      "mean_eval_ms_over_matches": 25.065,
+      "mean_moves_per_s": 3.214
+    },
+    "live": {
+      "matches": 1,
+      "matches_with_moves": 1,
+      "total_moves": 218,
+      "best_score": 4936,
+      "median_score": 4936.0,
+      "mean_eval_ms_over_matches": 170.688,
+      "mean_moves_per_s": 0.775
+    },
+    "live-battle-1": {
+      "matches": 1,
+      "matches_with_moves": 1,
+      "total_moves": 1419,
+      "best_score": 25264,
+      "median_score": 25264.0,
+      "mean_eval_ms_over_matches": 45.113,
+      "mean_moves_per_s": 0.754
+    },
+    "live-run2": {
+      "matches": 1,
+      "matches_with_moves": 1,
+      "total_moves": 1,
+      "best_score": 8,
+      "median_score": 8.0,
+      "mean_eval_ms_over_matches": 30.884,
+      "mean_moves_per_s": 0.135
+    },
+    "live-run3": {
+      "matches": 1,
+      "matches_with_moves": 1,
+      "total_moves": 642,
+      "best_score": 10028,
+      "median_score": 10028.0,
+      "mean_eval_ms_over_matches": 36.039,
+      "mean_moves_per_s": 0.287
+    },
+    "live-run4": {
+      "matches": 1,
+      "matches_with_moves": 0,
+      "total_moves": 0,
+      "best_score": 0,
+      "median_score": 0.0,
+      "mean_eval_ms_over_matches": null,
+      "mean_moves_per_s": null
+    },
+    "live-run6": {
+      "matches": 1,
+      "matches_with_moves": 1,
+      "total_moves": 214,
+      "best_score": 5664,
+      "median_score": 5664.0,
+      "mean_eval_ms_over_matches": 50.211,
+      "mean_moves_per_s": 0.287
+    },
+    "live-settle-008": {
+      "matches": 3,
+      "matches_with_moves": 3,
+      "total_moves": 1938,
+      "best_score": 31332,
+      "median_score": 16498.0,
+      "mean_eval_ms_over_matches": 1.283,
+      "mean_moves_per_s": 2.953
+    },
+    "live-settle-010": {
+      "matches": 1,
+      "matches_with_moves": 1,
+      "total_moves": 763,
+      "best_score": null,
+      "median_score": null,
+      "mean_eval_ms_over_matches": 1.494,
+      "mean_moves_per_s": null
+    },
+    "live-smoke": {
+      "matches": 1,
+      "matches_with_moves": 1,
+      "total_moves": 119,
+      "best_score": null,
+      "median_score": null,
+      "mean_eval_ms_over_matches": 24.82,
+      "mean_moves_per_s": null
+    },
+    "live-swar-debug": {
+      "matches": 1,
+      "matches_with_moves": 1,
+      "total_moves": 124,
+      "best_score": null,
+      "median_score": null,
+      "mean_eval_ms_over_matches": 2.12,
+      "mean_moves_per_s": null
+    },
+    "live-swar-run2": {
+      "matches": 1,
+      "matches_with_moves": 1,
+      "total_moves": 1607,
+      "best_score": 29888,
+      "median_score": 29888.0,
+      "mean_eval_ms_over_matches": 1.353,
+      "mean_moves_per_s": 1.463
+    },
+    "live-swipe-30": {
+      "matches": 2,
+      "matches_with_moves": 2,
+      "total_moves": 1827,
+      "best_score": 14484,
+      "median_score": 14484.0,
+      "mean_eval_ms_over_matches": 1.994,
+      "mean_moves_per_s": 3.318
+    },
+    "live-swipe-45": {
+      "matches": 2,
+      "matches_with_moves": 2,
+      "total_moves": 2909,
+      "best_score": 34324,
+      "median_score": 34324.0,
+      "mean_eval_ms_over_matches": 2.697,
+      "mean_moves_per_s": 3.173
+    },
+    "live-swipe-60": {
+      "matches": 2,
+      "matches_with_moves": 2,
+      "total_moves": 2473,
+      "best_score": 36572,
+      "median_score": 23352.0,
+      "mean_eval_ms_over_matches": 1.676,
+      "mean_moves_per_s": 2.867
+    },
+    "live-swipe-80": {
+      "matches": 1,
+      "matches_with_moves": 1,
+      "total_moves": 1279,
+      "best_score": null,
+      "median_score": null,
+      "mean_eval_ms_over_matches": 1.903,
+      "mean_moves_per_s": null
+    },
+    "new-engine-shakedown": {
+      "matches": 3,
+      "matches_with_moves": 3,
+      "total_moves": 3816,
+      "best_score": 38188,
+      "median_score": 31664.0,
+      "mean_eval_ms_over_matches": 1.577,
+      "mean_moves_per_s": 2.939
+    },
+    "ntuple-champion-budget": {
+      "matches": 2,
+      "matches_with_moves": 2,
+      "total_moves": 3547,
+      "best_score": 43656,
+      "median_score": 43656.0,
+      "mean_eval_ms_over_matches": 144.494,
+      "mean_moves_per_s": 2.047
+    },
+    "ntuple-champion-ladder": {
+      "matches": 2,
+      "matches_with_moves": 2,
+      "total_moves": 3119,
+      "best_score": 38884,
+      "median_score": 29302.0,
+      "mean_eval_ms_over_matches": 193.129,
+      "mean_moves_per_s": 1.773
+    },
+    "ntuple-champion-live": {
+      "matches": 6,
+      "matches_with_moves": 6,
+      "total_moves": 6774,
+      "best_score": 44288,
+      "median_score": 18990.0,
+      "mean_eval_ms_over_matches": 30.593,
+      "mean_moves_per_s": 2.395
+    },
+    "ntuple-champion-record": {
+      "matches": 2,
+      "matches_with_moves": 2,
+      "total_moves": 2870,
+      "best_score": 36260,
+      "median_score": 36260.0,
+      "mean_eval_ms_over_matches": 386.958,
+      "mean_moves_per_s": 1.26
+    },
+    "ntuple-depth4": {
+      "matches": 5,
+      "matches_with_moves": 5,
+      "total_moves": 8248,
+      "best_score": 43028,
+      "median_score": 37812.0,
+      "mean_eval_ms_over_matches": 0.938,
+      "mean_moves_per_s": 2.789
+    },
+    "ntuple-fast-ladder": {
+      "matches": 2,
+      "matches_with_moves": 2,
+      "total_moves": 2224,
+      "best_score": 34052,
+      "median_score": 19692.0,
+      "mean_eval_ms_over_matches": 133.316,
+      "mean_moves_per_s": 2.022
+    },
+    "ntuple-fast-resume": {
+      "matches": 22,
+      "matches_with_moves": 22,
+      "total_moves": 43557,
+      "best_score": 48136,
+      "median_score": 38504.0,
+      "mean_eval_ms_over_matches": 341.289,
+      "mean_moves_per_s": 1.738
+    },
+    "ntuple-golden": {
+      "matches": 9,
+      "matches_with_moves": 9,
+      "total_moves": 9295,
+      "best_score": 32452,
+      "median_score": 22492.0,
+      "mean_eval_ms_over_matches": 274.768,
+      "mean_moves_per_s": 1.948
+    },
+    "ntuple-record": {
+      "matches": 178,
+      "matches_with_moves": 135,
+      "total_moves": 209225,
+      "best_score": 45612,
+      "median_score": 27780.0,
+      "mean_eval_ms_over_matches": 0.561,
+      "mean_moves_per_s": 2.78
+    },
+    "r4-smoke": {
+      "matches": 1,
+      "matches_with_moves": 1,
+      "total_moves": 124,
+      "best_score": null,
+      "median_score": null,
+      "mean_eval_ms_over_matches": 1.359,
+      "mean_moves_per_s": null
+    },
+    "run7": {
+      "matches": 1,
+      "matches_with_moves": 1,
+      "total_moves": 639,
+      "best_score": null,
+      "median_score": null,
+      "mean_eval_ms_over_matches": 58.229,
+      "mean_moves_per_s": null
+    },
+    "sacrifice-test": {
+      "matches": 1,
+      "matches_with_moves": 1,
+      "total_moves": 429,
+      "best_score": 10808,
+      "median_score": 10808.0,
+      "mean_eval_ms_over_matches": 0.635,
+      "mean_moves_per_s": 3.148
+    }
+  }
+}

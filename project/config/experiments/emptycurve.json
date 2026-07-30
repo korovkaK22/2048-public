@@ -1,0 +1,32 @@
+{
+  "label": "emptycurve",
+  "notes": "Convex empty-cell value curve replaces the linear 340 x countEmpty. Aimed straight at the measured cause of death: P(death within 100 moves) at 4 reservoirs is 39% at 3 empties and 78% at 0, while the linear term prices the 3rd-from-last empty like the 12th. Free at run time (one indexed load instead of a multiply). Headline metric: MEDIAN MOVES. PAIRED with baseline.json \u2014 same seeds, same depth.",
+  "depth": 6,
+  "adaptive": false,
+  "stop_tile": 2048,
+  "max_moves": 6000,
+  "seeds": {
+    "base": 1000,
+    "count": 100
+  },
+  "weights": {
+    "BOT2048_FARM_EMPTY_W": 340,
+    "BOT2048_FARM_MERGE_W": 140,
+    "BOT2048_FARM_CORNER_W": 640,
+    "BOT2048_FARM_EDGE_W": 0,
+    "BOT2048_FARM_STAIR_W": 120,
+    "BOT2048_FARM_SNAKE_W": 0.25,
+    "BOT2048_FARM_SNAKE_RATIO": 0.85,
+    "BOT2048_FARM_CORNER_RANK_W": 160,
+    "BOT2048_FARM_CONVEX_W": 80,
+    "BOT2048_FARM_LATE_EMPTY_W": 120,
+    "BOT2048_FARM_LATE_GRAD_MULT": 2.0,
+    "BOT2048_FARM_LATE_CORNER_RANK_W": 320,
+    "BOT2048_FARM_HOARD_TRIGGER": 99,
+    "BOT2048_FARM_MOBILITY_W": 0,
+    "BOT2048_FARM_MOB_PAIR_PEN": 1.0,
+    "BOT2048_FARM_QUADCORNER_W": 0,
+    "BOT2048_FARM_QUAD_RATIO": 0.5,
+    "BOT2048_FARM_EMPTY_CURVE_W": 1.0
+  }
+}

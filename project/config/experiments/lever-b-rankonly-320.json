@@ -1,0 +1,28 @@
+{
+  "label": "lever-b-rankonly-320",
+  "notes": "PAIRED A/B (2026-07-11 lever study). Same seeds 1000..1099 in every arm. Primary metric: MEDIAN MOVES (score = 18.2 x moves). ARM B: kill the flat corner bonus (CORNER_W=0), pay corners only by rank (2x).",
+  "depth": 6,
+  "adaptive": false,
+  "stop_tile": 2048,
+  "max_moves": 6000,
+  "seeds": {
+    "base": 1000,
+    "count": 100
+  },
+  "weights": {
+    "BOT2048_FARM_EMPTY_W": 340,
+    "BOT2048_FARM_MERGE_W": 140,
+    "BOT2048_FARM_CORNER_W": 0,
+    "BOT2048_FARM_EDGE_W": 0,
+    "BOT2048_FARM_STAIR_W": 120,
+    "BOT2048_FARM_SNAKE_W": 0.25,
+    "BOT2048_FARM_SNAKE_RATIO": 0.85,
+    "BOT2048_FARM_CORNER_RANK_W": 320,
+    "BOT2048_FARM_CONVEX_W": 80,
+    "BOT2048_FARM_LATE_EMPTY_W": 120,
+    "BOT2048_FARM_LATE_GRAD_MULT": 2.0,
+    "BOT2048_FARM_LATE_CORNER_RANK_W": 320,
+    "BOT2048_FARM_HOARD_TRIGGER": 99,
+    "BOT2048_CPROB_THRESH": 0.0001
+  }
+}

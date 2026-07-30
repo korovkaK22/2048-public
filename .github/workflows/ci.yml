@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: project
+
+jobs:
+  python:
+    name: python — ruff, mypy --strict, pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: project/pyproject.toml
+
+      # opencv needs libGL/libglib present even when only importing; ffmpeg is
+      # what the scrcpy frame-source tests decode with (they skip without it,
+      # so installing it buys ~12 extra tests).
+      - name: System deps
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libgl1 libglib2.0-0 ffmpeg
+
+      # Go is needed because ai/go_engine.py builds tools/engine2048 on demand;
+      # without it the Go-strategy tests skip themselves.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: project/tools/engine2048/go.mod
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,device]"
+
+      - name: Ruff
+        run: python -m ruff check src tests
+
+      - name: Mypy (strict)
+        run: python -m mypy src
+
+      - name: Pytest
+        run: python -m pytest
+
+  go:
+    name: go — vet + test (both engines)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [engine2048, ntuple]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: project/tools/${{ matrix.engine }}/go.mod
+
+      # Both modules are stdlib-only, so there is no dependency download step.
+      # Tests that need the 56 MB n-tuple weights skip themselves when the file
+      # is absent, and it is deliberately not in git — so this stays green.
+      - name: Vet
+        run: go vet ./...
+        working-directory: project/tools/${{ matrix.engine }}
+
+      - name: Test
+        run: go test ./...
+        working-directory: project/tools/${{ matrix.engine }}
+
+      - name: Build
+        run: go build ./...
+        working-directory: project/tools/${{ matrix.engine }}

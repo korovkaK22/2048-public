@@ -1,0 +1,18 @@
+# Shell scripts must stay LF or they break when run on Linux/macOS.
+*.sh text eol=lf
+
+# Never line-ending-convert or try to diff these as text.
+*.bin  binary
+*.pgo  binary
+*.jar  binary
+*.png  binary
+*.jpg  binary
+*.apk  binary
+*.exe  binary
+*.dll  binary
+
+# Generated glyph data: keep it out of diff summaries, it is data not code.
+project/src/bot2048/vision/glyph_templates.py linguist-generated=true
+
+# Report the repo as Python; the Go engines and Kotlin APK are supporting tools.
+*.md linguist-documentation

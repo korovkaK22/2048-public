@@ -1,0 +1,25 @@
+{
+  "games": 12,
+  "score_mean": 28586.7,
+  "score_median": 30188.0,
+  "score_max": 37544,
+  "score_min": 16116,
+  "score_stdev": 7011.4,
+  "p_score_ge": {
+    "45000": 0.0,
+    "48000": 0.0,
+    "50000": 0.0
+  },
+  "pct_reach_2x1024": 0.8333,
+  "pct_reach_3x1024": 0.5833,
+  "pct_reach_4x1024": 0.1667,
+  "forced_2048_rate": 0.0,
+  "max_tile_hist": {
+    "1024": 12
+  },
+  "end_reason_hist": {
+    "game_over": 12
+  },
+  "moves_mean": 1571.7,
+  "moves_total": 18860
+}

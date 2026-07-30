@@ -1,0 +1,27 @@
+{
+  "games": 13,
+  "score_mean": 32676.3,
+  "score_median": 32456,
+  "score_max": 41164,
+  "score_min": 29448,
+  "score_stdev": 2866.7,
+  "p_score_ge": {
+    "45000": 0.0,
+    "48000": 0.0,
+    "50000": 0.0
+  },
+  "pct_reach_2x1024": 1.0,
+  "pct_reach_3x1024": 1.0,
+  "pct_reach_4x1024": 0.0769,
+  "forced_2048_rate": 0.0769,
+  "max_tile_hist": {
+    "1024": 12,
+    "2048": 1
+  },
+  "end_reason_hist": {
+    "game_over": 12,
+    "tile_cap": 1
+  },
+  "moves_mean": 1767.2,
+  "moves_total": 22974
+}

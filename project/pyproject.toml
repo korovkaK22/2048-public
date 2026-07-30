@@ -1,0 +1,63 @@
+[project]
+name = "bot2048"
+version = "0.1.0"
+description = "Production-grade 2048 bot: game engine, expectimax AI, simulation lab, and Android live player with full game telemetry."
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=1.26",
+    "structlog>=24.1",
+    "typer>=0.12",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+device = [
+    "adbutils>=2.8",
+    "opencv-python>=4.9",
+    "pillow>=10.3",
+]
+dev = [
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "pytest-xdist",
+    "hypothesis>=6.100",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+bot2048 = "bot2048.cli:app"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+# Ukrainian is a first-class language in this codebase (docstrings, comments,
+# user-facing strings). The "ambiguous unicode" rules flag every Cyrillic
+# character, which is pure noise here.
+# UP040: PEP-695 `type` aliases are optional style; core/types.py is a frozen
+# contract using `TypeAlias` and must not be churned for it.
+ignore = ["RUF001", "RUF002", "RUF003", "UP040"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]  # "src" first: test THIS checkout's bot2048, not the shared venv's editable install (main repo); "." makes `from tests.runner.conftest import ...` work under bare `pytest`
+addopts = "-q --durations=10 -n auto --dist loadgroup"  # loadgroup honours xdist_group("serial_heavy") from tests/conftest.py
+markers = [
+    "xdist_group(name): pin tests to one xdist worker (set centrally in tests/conftest.py; no-op serially)",
+]

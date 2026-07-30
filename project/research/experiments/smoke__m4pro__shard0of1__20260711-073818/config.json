@@ -1,0 +1,22 @@
+{
+  "label": "smoke",
+  "notes": "Tiny mechanics check: 4 games, depth 6, baseline weights. Not for numbers \u2014 just to confirm the harness produces a run folder with summary.md + results. Use as the first-run example in the Mac runbook.",
+  "depth": 6,
+  "adaptive": false,
+  "stop_tile": 2048,
+  "max_moves": 6000,
+  "seeds": {
+    "base": 1000,
+    "count": 4
+  },
+  "weights": {
+    "BOT2048_FARM_EMPTY_W": 340,
+    "BOT2048_FARM_MERGE_W": 140,
+    "BOT2048_FARM_CORNER_W": 640,
+    "BOT2048_FARM_EDGE_W": 0,
+    "BOT2048_FARM_STAIR_W": 120,
+    "BOT2048_FARM_SNAKE_W": 0.25,
+    "BOT2048_FARM_SNAKE_RATIO": 0.85,
+    "BOT2048_FARM_CORNER_RANK_W": 160
+  }
+}

@@ -1,0 +1,11 @@
+- [Simulation & engine discipline](2048-simulation-discipline.md) — one game-runner at a time, never global pkill, wall-clock lies under load, n=12 is not data, judge by the truncated tail
+- [Numbers must come from data](numbers-must-come-from-data.md) — four cases where a reasoned-to constant was wrong and the measurement said the opposite
+- [Games continue, infra is fine](games-continue-infra-is-fine.md) — live games did NOT crash; vision_mismatch/screen statuses = logging/game-splitting artifacts, all results VALID, never call infra a reliability lever
+- [PoC then optimize](poc-then-optimize.md) — small ≤20-min proof-of-concept first (binary "did the wall move"), full n≥400 optimization only after a chance is confirmed
+- [Cash-out & champion state](cashout-and-champion-state.md) — cash-out +2048 confirmed live; tail-net champion (λ=0.003) shifts whole distribution; records 49.6k/49.4k; build cash-out trigger first
+- [Soft not hard overrides](soft-not-hard-overrides.md) — soft leaf penalties help the champion net, hard move-vetoes/risk-backup hurt (proven 3x); real gap to record is cash-out TIMING not survival
+- [Banker arm timing is tuned](banker-arm-timing-is-tuned.md) — lowering target/arm to secure the 48500 floor DESTROYS top-3 (9/10 seeds -1.3…-5.1k); late arm 49901 holds for the higher hand; don't touch it
+- [Theoretical max score](theoretical-max-score.md) — real ceiling is 106,496 legality / ~81k achievability; 51k and 100k were BOTH wrong; competitor's 58k is survival-limited not combinatorics
+- [Mac max-power commands](mac-max-power-commands.md) — caffeinate + pmset to stop throttling for heavy sims; killall caffeinate to revert
+- [Beat 58k / ceiling investigation](beat-58k-via-k4-cascade.md) — ~53k is the MEASURED true ceiling (R4 EV-gate: preserving support is EV-losing ΔEV −1173, fill-pressure hazard is geometric); record board bankable-if-handed but not forward-reachable; k=5 dead; competitor 58k unreproducible by 4 levers → pivot to throughput/reliability
+- [Beat 58k FINAL closure](beat-58k-final-closure.md) — 2026-07-25 exhaustive close: no sim lever left, aggregate-leaderboard hypothesis killed logically (our 49.6k row = single-game not cumulative), PoC-B dead (user won't play), banker-ON tail confirmed 51.1k wall @ n=8220; only path to 58k is throughput not engine strength

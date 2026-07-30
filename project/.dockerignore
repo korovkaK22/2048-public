@@ -1,0 +1,39 @@
+# Build context = the project/ directory (see Dockerfile).
+# Keep the context small and reproducible. IMPORTANT: do NOT ignore
+# tools/engine2048 -- its *.go sources are needed by the engine build stage.
+
+# --- virtualenvs / caches ---
+.venv/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- scratch / runtime data / logs / secrets (never into the image) ---
+tmp/
+data/
+logs/
+.secrets/
+*.db
+*.db-wal
+*.db-shm
+
+# --- heavy host-only tool binaries (irrelevant to a linux batch/test image) ---
+tools/ffmpeg
+tools/scrcpy
+tools/platform-tools
+# Windows/host engine artifacts -- the image builds its own linux binary.
+tools/engine2048/*.exe
+tools/engine2048/*.exe~
+tools/engine2048/engine2048
+
+# --- Android app build output ---
+ondevice-apk/**/build
+
+# --- misc VCS / editor cruft ---
+.git/
+.gitignore
+*.log

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Accessibility config for SwipeAccessibilityService.
+
+  This service injects gestures only; it does NOT observe the screen. It
+  therefore subscribes to no event types and requests no content-retrieval
+  flags (both attributes omitted, i.e. left at their empty defaults):
+  - canPerformGestures="true" : REQUIRED for dispatchGesture().
+  - notificationTimeout="0"   : no event throttling needed.
+  - description points at a user-visible string in the Settings toggle.
+-->
+<accessibility-service
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:canPerformGestures="true"
+    android:notificationTimeout="0"
+    android:description="@string/swipe_accessibility_description" />

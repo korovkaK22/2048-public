@@ -1,0 +1,19 @@
+{
+  "machine": "m4pro",
+  "shard": "0/1",
+  "workers": 4,
+  "gomaxprocs": 1,
+  "depth": 6,
+  "games": 4,
+  "seed_base": 1000,
+  "seed_count": 4,
+  "shard_seed_lo": 1000,
+  "shard_seed_hi": 1003,
+  "wall_s": 116.442,
+  "games_per_hour": 123.7,
+  "moves_per_sec": 60.6,
+  "moves_total": 7053,
+  "ms_per_move_mean": 54.908,
+  "arch": "arm64",
+  "python": "3.12.13"
+}
