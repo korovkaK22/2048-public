@@ -13,7 +13,8 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-import bot2048.runner.cli as cli
+import bot2048.runner.cli.cmd_play as cmd_play
+from bot2048.runner.cli import app
 from bot2048.runner.live import LiveConfig
 
 runner = CliRunner()
@@ -42,23 +43,23 @@ class _StubDevice:
 def captured_configs(monkeypatch: pytest.MonkeyPatch) -> list[LiveConfig]:
     """Run ``play`` for real but record every LiveConfig it builds."""
     configs: list[LiveConfig] = []
-    real_config = cli.LiveConfig
+    real_config = cmd_play.LiveConfig
 
     def record(**kwargs: Any) -> LiveConfig:
         config = real_config(**kwargs)
         configs.append(config)
         return config
 
-    monkeypatch.setattr(cli, "LiveConfig", record)
-    monkeypatch.setattr(cli, "_make_vision", lambda path: _StubVision())
-    monkeypatch.setattr(cli, "_connect", lambda serial: _StubDevice())
-    monkeypatch.setattr(cli, "_run_guarded", lambda **kwargs: None)
+    monkeypatch.setattr(cmd_play, "LiveConfig", record)
+    monkeypatch.setattr(cmd_play, "_make_vision", lambda path: _StubVision())
+    monkeypatch.setattr(cmd_play, "_connect", lambda serial: _StubDevice())
+    monkeypatch.setattr(cmd_play, "_run_guarded", lambda **kwargs: None)
     return configs
 
 
 def test_escalate_flags_reach_live_config(captured_configs: list[LiveConfig]) -> None:
     result = runner.invoke(
-        cli.app,
+        app,
         [
             *_BASE_ARGS,
             "--budget-ms",
@@ -81,7 +82,7 @@ def test_escalate_flags_reach_live_config(captured_configs: list[LiveConfig]) ->
 def test_omitting_flags_keeps_escalation_off(
     captured_configs: list[LiveConfig],
 ) -> None:
-    result = runner.invoke(cli.app, _BASE_ARGS)
+    result = runner.invoke(app, _BASE_ARGS)
     assert result.exit_code == 0, result.output
     (config,) = captured_configs
     assert config.escalate_after_ply is None
@@ -97,7 +98,7 @@ def test_omitting_flags_keeps_escalation_off(
 
 def test_ladder_flags_reach_live_config(captured_configs: list[LiveConfig]) -> None:
     result = runner.invoke(
-        cli.app,
+        app,
         [
             *_BASE_ARGS,
             "--budget-ms",
