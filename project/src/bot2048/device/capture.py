@@ -49,6 +49,8 @@ from bot2048.device.humanizer import BBox, Humanizer, SwipeParams
 log = structlog.get_logger(__name__)
 
 __all__ = [
+    "CAPTURE_KIND_SCREENCAP",
+    "CAPTURE_KIND_STREAM",
     "CaptureDevice",
     "FrameSource",
     "Image",
@@ -65,6 +67,15 @@ Image = npt.NDArray[np.uint8]
 
 #: Allowed minicap display rotations (degrees).
 _VALID_ROTATIONS: frozenset[int] = frozenset({0, 90, 180, 270})
+
+#: :meth:`StreamingCaptureDevice.last_capture_kind` labels. They match the
+#: ``capture`` values of ``experiments.params_json`` / the ``capture_kind`` key
+#: of ``MovePlayed.eval_details["move"]`` that ``bot2048 db latency`` reads, so
+#: the FACTUAL per-frame source is comparable with the CONFIGURED one. The
+#: stream label is ``"scrcpy"`` because that is the only live streaming source
+#: on this device (minicap is dead on Android 13, see the module docs).
+CAPTURE_KIND_STREAM: str = "scrcpy"
+CAPTURE_KIND_SCREENCAP: str = "screencap"
 
 
 @runtime_checkable
@@ -467,16 +478,19 @@ class StreamingCaptureDevice:
         self._secure_hold = False
         self._source_started = False
         self._black_streak = False
+        # The FACTUAL source of the most recent ``screenshot()`` frame (see
+        # :meth:`last_capture_kind`); ``None`` until the first frame is served.
+        self._last_kind: str | None = None
 
     # -- capture path ------------------------------------------------------
 
     def screenshot(self) -> Image:
         """One fresh RGB uint8 ``(H, W, 3)`` frame via the fallback ladder."""
         if self._disabled:
-            return self._device.screenshot()
+            return self._screencap()
         if self._secure_hold:
             # EmptyScreencapError/DeviceError propagate: the AUTH sensor.
-            frame = self._device.screenshot()
+            frame = self._screencap()
             # Screencap succeeded => the FLAG_SECURE wall is gone; re-probe
             # the stream with a fresh start() on the NEXT capture.
             self._secure_hold = False
@@ -500,9 +514,31 @@ class StreamingCaptureDevice:
                     "capture.streaming_black_frame",
                     hint="stream is black (FLAG_SECURE?); serving screencap for this frame",
                 )
-            return self._device.screenshot()
+            return self._screencap()
         self._black_streak = False
         self._failures = 0
+        self._last_kind = CAPTURE_KIND_STREAM
+        return frame
+
+    def last_capture_kind(self) -> str | None:
+        """The FACTUAL source of the most recent ``screenshot()`` frame.
+
+        :data:`CAPTURE_KIND_STREAM` when the streaming source served it,
+        :data:`CAPTURE_KIND_SCREENCAP` when any rung of the fallback ladder
+        (disabled / secure hold / black frame / stream failure) served a
+        ``device.screenshot()`` instead; ``None`` before the first frame. Pure
+        bookkeeping -- never touches the device -- so the per-move telemetry
+        (``bot2048.runner.move_telemetry``) can record which source actually
+        produced each frame without reaching into this class's internals: a
+        silent fallback to ~0.65 s/frame ``screencap`` is otherwise invisible
+        behind the CONFIGURED capture label.
+        """
+        return self._last_kind
+
+    def _screencap(self) -> Image:
+        """``device.screenshot()`` + book-keep the source; exceptions propagate."""
+        frame = self._device.screenshot()
+        self._last_kind = CAPTURE_KIND_SCREENCAP
         return frame
 
     def _fallback(self, error: Exception) -> Image:
@@ -518,7 +554,7 @@ class StreamingCaptureDevice:
                 error=str(error),
                 hint="FLAG_SECURE suspected; holding on screencap until it succeeds",
             )
-            return self._device.screenshot()
+            return self._screencap()
         self._failures += 1
         if self._failures >= self._max_failures:
             self._disabled = True
@@ -535,7 +571,7 @@ class StreamingCaptureDevice:
                 failures=self._failures,
                 max_failures=self._max_failures,
             )
-        return self._device.screenshot()
+        return self._screencap()
 
     def _close_source(self) -> None:
         """Best-effort ``source.close()`` -- a broken close must not crash play."""

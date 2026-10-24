@@ -92,10 +92,9 @@ from typing import Any, NoReturn, Protocol
 
 import structlog
 
-from bot2048.ai.go_engine import GoExpectimaxStrategy
 from bot2048.ai.strategies import Strategy
 from bot2048.core import engine
-from bot2048.core.types import BOARD_SIZE, Board, Direction, Spawn
+from bot2048.core.types import Board, Direction, Spawn
 
 # NOTE: module import, not a from-import: device/supervisor.py itself imports
 # bot2048.runner.incidents, so binding FatalIncident at import time crashes on
@@ -116,9 +115,20 @@ from bot2048.runner import incidents
 from bot2048.runner.alerts import Alert, AlertCode, AlertLevel, AlertWriter
 from bot2048.runner.auth_flow import AuthFlow
 from bot2048.runner.bg_detect import BackgroundStateProbe, StateProbe
+from bot2048.runner.budget_ladder import BudgetLadder
 from bot2048.runner.debug_capture import DEBUG_CAPTURE_REASONS, DebugCapture
 from bot2048.runner.errors import LiveLoopError
 from bot2048.runner.escalation import ProbeResult, probe_screen
+
+# Game-end notification formatting lives in game_end_notify.py; the names are
+# re-exported here (``__all__`` / the ``noqa`` re-exports) because tests and
+# downstream callers import them from this module.
+from bot2048.runner.game_end_notify import (  # noqa: F401  (re-exports)
+    FARM_SIM_MEAN,
+    _format_game_end_notify,
+    _render_final_grid,
+    format_duration,
+)
 from bot2048.runner.incidents import Image, MoveRing
 from bot2048.runner.live_config import (
     DEFAULT_DEBUG_CAPTURES_ROOT,
@@ -128,7 +138,6 @@ from bot2048.runner.live_config import (
 )
 from bot2048.runner.move_telemetry import (
     _board_stats,
-    _BoardStats,
     _GameTelemetry,
     _MoveCounters,
     _MovePhaseTimer,
@@ -175,6 +184,7 @@ log = structlog.get_logger(__name__)
 APK_FRAMES_FRESH_WINDOW_S: float = 5.0
 
 __all__ = [
+    "FARM_SIM_MEAN",
     "SETTLE_DELAY_DEFAULT_S",
     "BoardReader",
     "BoardSource",
@@ -190,6 +200,7 @@ __all__ = [
     "NotifyHook",
     "StateDetector",
     "diff_spawn",
+    "format_duration",
 ]
 
 
@@ -328,98 +339,6 @@ PinReader = Callable[[], str | None]
 """Returns the auto-login PIN or ``None`` (default: ``device.auth.read_pin``)."""
 
 
-#: Farm-strategy simulation baseline mean score (~28.6k, docs/experiment-log.md).
-#: The game-end notification shows this game's score as +/- vs this constant so a
-#: single game is instantly comparable to the strategy's expected output even
-#: when the DB percentile is unavailable (fresh DB / too few games).
-FARM_SIM_MEAN: int = 28600
-
-
-def format_duration(seconds: float) -> str:
-    """Human clock string: ``594 -> '9:54'``; an hour or more -> ``'H:MM:SS'``.
-
-    Rounds to the nearest whole second; negatives clamp to ``'0:00'``. Pure and
-    locale-free, so it is trivially testable and identical everywhere.
-    """
-    total = int(max(seconds, 0.0) + 0.5)
-    hours, rem = divmod(total, 3600)
-    minutes, secs = divmod(rem, 60)
-    if hours:
-        return f"{hours}:{minutes:02d}:{secs:02d}"
-    return f"{minutes}:{secs:02d}"
-
-
-def _render_final_grid(board: Board) -> str:
-    """4x4 monospace grid of tile VALUES (``.`` = empty), for a TG code block.
-
-    Renders positions -- not just a count -- so the notification shows WHERE the
-    tiles jammed. Columns are right-aligned to the widest present value.
-    """
-    values = [0 if exponent == 0 else 1 << exponent for exponent in board]
-    width = max((len(str(v)) for v in values if v), default=1)
-    lines: list[str] = []
-    for row in range(BOARD_SIZE):
-        cells = [
-            ("." if values[row * BOARD_SIZE + col] == 0 else str(values[row * BOARD_SIZE + col]))
-            .rjust(width)
-            for col in range(BOARD_SIZE)
-        ]
-        lines.append(" ".join(cells))
-    return "\n".join(lines)
-
-
-def _format_game_end_notify(
-    *,
-    game_id: str,
-    end_reason: str,
-    score: int,
-    moves: int,
-    duration_s: float,
-    stats: _BoardStats,
-    board: Board,
-    percentile: FarmPercentile | None,
-) -> str:
-    """Compose the rich game-over/win notification body (docs/telegram-notify.md).
-
-    Layout: header, one-line summary, a fenced 4x4 board grid (rendered as a
-    monospace Markdown code block by :func:`bot2048.tgnotify._maybe_markdown`),
-    the tile breakdown, the
-    fill/sum line, the farm-baseline delta, and -- when available -- the DB
-    percentile among past farm games. Additive: nothing here is written to the
-    database; it only enriches the human-facing message.
-    """
-    per_move = round(score / moves) if moves > 0 else 0
-    tiles = ", ".join(f"{value}×{count}" for value, count in stats.histogram.items()) or "—"
-    delta = score - FARM_SIM_MEAN
-    delta_pct = round(100 * delta / FARM_SIM_MEAN) if FARM_SIM_MEAN else 0
-    sign = "+" if delta >= 0 else ""
-    lines = [
-        f"🏁 Гра {game_id[:8]} — {end_reason}",
-        f"Рахунок {score} · {moves} ходів · {format_duration(duration_s)}"
-        f" · {per_move}/хід · макс. плитка {stats.highest}",
-        "```\n" + _render_final_grid(board) + "\n```",
-        f"Плитки: {tiles}",
-        f"Порожніх: {stats.empty} · сума {stats.total}",
-        f"vs farm-базлайн {FARM_SIM_MEAN / 1000:.1f}k: {sign}{delta} ({sign}{delta_pct}%)",
-    ]
-    if percentile is not None:
-        lines.append(
-            f"Краще за {percentile.better_pct:.0f}% минулих farm-ігор "
-            f"(N={percentile.sample_size})"
-        )
-    return "\n".join(lines)
-
-
-#: Budget-ladder tiers (briefs/live-pipeline-timing.md §3): T0 bulk (base
-#: ``--budget-ms``, hidden under the ~250 ms swipe cadence), T1 late-game
-#: (past the ~2067-move champion median, ~2000 ms), T2 endgame (death-zone,
-#: few empty cells, up to ~9000 ms). Ordered: comparisons drive the
-#: monotonic step-up in :meth:`LiveRunner._maybe_escalate_budget`.
-_TIER_BASE: int = 0
-_TIER_LATE: int = 1
-_TIER_ENDGAME: int = 2
-
-
 @dataclass(slots=True)
 class _GameState:
     """Mutable per-game bookkeeping."""
@@ -431,7 +350,7 @@ class _GameState:
     ply: int = 0
     ended: bool = False  # GameEnded emitted (guards abort finalization)
     #: Mid-game budget escalation stepped at least once for THIS game (any
-    #: ladder tier above T0; see :meth:`LiveRunner._maybe_escalate_budget`).
+    #: ladder tier above T0; see :meth:`BudgetLadder.maybe_escalate`).
     budget_escalated: bool = False
     #: Highest budget-ladder tier reached by THIS game (0 = T0 base bulk,
     #: 1 = T1 late-game, 2 = T2 endgame). Monotonic: the ladder only steps
@@ -655,16 +574,21 @@ class LiveRunner:
             sleep=lambda seconds: self._sleep(seconds),
             debug_capture=self._debug,
         )
-        # Mid-game budget ladder (brief §3): the go strategy's pre-escalation
-        # (T0 base) ``budget_ms``, remembered when a game first steps up so
-        # the NEXT game starts back at the base budget (games stay
-        # independent attempts).
-        self._pre_escalation_budget_ms: float | None = None
+        # Mid-game budget ladder (brief §3): pure policy over the go strategy's
+        # ``budget_ms`` -- stepped UP after each committed move
+        # (``_maybe_escalate_budget``), restored to the T0 base when a new game
+        # begins (``_begin_game``) so games stay independent attempts.
+        self._ladder = BudgetLadder(strategy=self.strategy, config=self.config)
 
     @property
     def _recoveries(self) -> deque[float]:
         """Session-recovery timestamps (owned by :class:`SessionRecovery`)."""
         return self._recovery.recoveries
+
+    @property
+    def _pre_escalation_budget_ms(self) -> float | None:
+        """The remembered T0 base budget (owned by :class:`BudgetLadder`)."""
+        return self._ladder.pre_escalation_budget_ms
 
     @staticmethod
     def _build_humanizer(config: LiveConfig) -> Humanizer:
@@ -1015,14 +939,7 @@ class LiveRunner:
         # A previous game's budget-ladder step (brief §3) must not leak into
         # this one: every game is an independent record attempt, so restore
         # the T0 base budget (the fresh _GameState resets the tier to T0).
-        if self._pre_escalation_budget_ms is not None and isinstance(
-            self.strategy, GoExpectimaxStrategy
-        ):
-            self.strategy.set_budget_ms(self._pre_escalation_budget_ms)
-            log.debug(
-                "live.budget_restored", budget_ms=self._pre_escalation_budget_ms
-            )
-            self._pre_escalation_budget_ms = None
+        self._ladder.restore_base()
         state = _GameState(game_id=uuid.uuid4().hex, board=board, t0=t0)
         now = time.time()
         self._record(
@@ -1146,85 +1063,8 @@ class LiveRunner:
             self._maybe_escalate_budget(state)
 
     def _maybe_escalate_budget(self, state: _GameState) -> None:
-        """Step the go strategy's ``budget_ms`` UP the 3-tier ladder (brief §3).
-
-        Each committed move the target tier is computed from the CURRENT
-        phase -- T2 endgame when the board has at most
-        ``ladder_endgame_when_empty_le`` empty cells (death-zone, near
-        cash-out), else T1 late-game once ``state.ply`` reached
-        ``ladder_late_after_ply`` (the ~2067-move champion median), else T0
-        base -- and applied via :meth:`GoExpectimaxStrategy.set_budget_ms`
-        exactly when the tier RISES. Monotonic within a game: a merge that
-        frees empty cells (or any phase flapping) never steps the budget back
-        down; a fresh ``_GameState`` starts back at T0 and
-        :meth:`_begin_game` restores the base budget. The legacy one-shot
-        ``escalate_*`` knobs map onto the ladder in
-        :class:`~bot2048.runner.live_config.LiveConfig` (ply trigger -> T1,
-        empty trigger -> T2, both at ``escalate_budget_ms``), so old flags
-        behave exactly as before. OFF (no-op) when no tier is configured;
-        silently skipped when the strategy is not a budget-mode
-        :class:`GoExpectimaxStrategy`. Never raises.
-        """
-        strategy = self.strategy
-        if not isinstance(strategy, GoExpectimaxStrategy):
-            return
-        if strategy.budget_ms is None:
-            return  # fixed-depth mode: the ladder is a budget-mode lever only
-        tier, budget_ms, empty = self._ladder_target(state)
-        if budget_ms is None or tier <= state.budget_tier:
-            return  # monotonic: never step down (or re-apply) mid-game
-        if self._pre_escalation_budget_ms is None:
-            self._pre_escalation_budget_ms = strategy.budget_ms
-        strategy.set_budget_ms(budget_ms)
-        state.budget_tier = tier
-        state.budget_escalated = True
-        log.info(
-            "live.budget_escalated",
-            game_id=state.game_id,
-            ply=state.ply,
-            empty=empty,
-            tier=tier,
-            new_budget_ms=budget_ms,
-        )
-
-    def _ladder_target(self, state: _GameState) -> tuple[int, float | None, int]:
-        """The budget-ladder tier the CURRENT phase calls for (brief §3).
-
-        Returns ``(tier, budget_ms, empty_cells)``: T2 (endgame) when the
-        board is in the death-zone AND the game is genuinely late, else T1
-        (late) when the ply trigger fires, else T0 with ``None`` (= the base
-        budget; the caller never steps to it, base is only restored between
-        games). A tier whose threshold or budget knob is ``None`` is disabled
-        and can never be the target.
-
-        T2 is gated by BOTH few empty cells (``ladder_endgame_when_empty_le``)
-        AND a move-count floor (``ladder_endgame_after_ply``, defaulting to the
-        T1 median): a fresh board transiently dips to <= 4 empty around ply
-        20-40, so an empties-ONLY endgame trigger fired at ply 22 in a live run
-        and pinned the whole game at the slow budget. Requiring the game to be
-        late first makes low-empties mean "endgame" only when it truly is.
-        """
-        cfg = self.config
-        empty = _board_stats(state.board).empty
-        endgame_budget = cfg.ladder_endgame_budget_ms
-        endgame_empty_le = cfg.ladder_endgame_when_empty_le
-        endgame_after_ply = cfg.ladder_endgame_after_ply
-        if (
-            endgame_budget is not None
-            and endgame_empty_le is not None
-            and empty <= endgame_empty_le
-            and (endgame_after_ply is None or state.ply >= endgame_after_ply)
-        ):
-            return _TIER_ENDGAME, endgame_budget, empty
-        late_budget = cfg.ladder_late_budget_ms
-        late_after_ply = cfg.ladder_late_after_ply
-        if (
-            late_budget is not None
-            and late_after_ply is not None
-            and state.ply >= late_after_ply
-        ):
-            return _TIER_LATE, late_budget, empty
-        return _TIER_BASE, None, empty
+        """Step the search budget UP the ladder (delegates to :class:`BudgetLadder`)."""
+        self._ladder.maybe_escalate(state)
 
     def _end_game(self, state: _GameState, end_reason: str) -> str:
         duration = max(self._clock() - state.t0, 0.0)
@@ -1687,7 +1527,7 @@ class LiveRunner:
         path = self.screens_root / f"{game_id}_{end_reason}.png"
         # Reuse the incident PNG writer (same runner subpackage, best-effort:
         # it swallows Pillow/array errors into a WARN, never raises).
-        incidents._write_png(path, frame)
+        incidents.write_png(path, frame)
         log.info(
             "live.game_screen_saved",
             game_id=game_id,

@@ -159,40 +159,24 @@ def _device_capture_kind(device: object) -> str | None:
     ``research/telemetry_review.md`` M3: ``db latency`` used to read the
     CONFIGURED capture from ``experiments.params_json``, so a silent fallback
     from the scrcpy stream to ``screencap`` (~0.65 s/frame over WiFi) was
-    invisible in p95. This reads the fact from whatever the injected device
-    exposes, without touching the frozen device layer:
-
-    * a public ``last_capture_kind()`` (preferred; a future capture-layer
-      hook) -- used verbatim when present;
-    * else the documented fallback state of
-      :class:`~bot2048.device.capture.StreamingCaptureDevice` (duck-typed):
-      a disabled stream, a ``FLAG_SECURE`` hold or a black-frame streak all
-      mean the frame was served by ``screencap``.
+    invisible in p95. This reads the fact through the device's OPTIONAL public
+    ``last_capture_kind()`` hook
+    (:meth:`~bot2048.device.capture.StreamingCaptureDevice.last_capture_kind`
+    provides it) -- the ``LiveDevice`` protocol does not require the method, so
+    it is looked up by name, never by reaching into the capture layer's
+    internals. A hook that raises or returns a non-string yields ``None``.
 
     Returns ``None`` for a device that cannot report it (a bare fake, or a
     plain ``AdbDevice`` used directly) so the read side keeps the config label.
     """
     reporter = getattr(device, "last_capture_kind", None)
-    if callable(reporter):
-        try:
-            value = reporter()
-        except Exception:  # a telemetry probe must never break the move
-            return None
-        return value if isinstance(value, str) else None
-    # TODO(refactor, cheap coupling fix): replace this StreamingCaptureDevice
-    # duck-typing with a public ``last_capture_kind()`` on the capture layer
-    # (docs/refactor-plan.md, "Дешеві coupling-фікси") so the private
-    # ``_source_started`` / ``_disabled`` / ``_secure_hold`` / ``_black_streak``
-    # fields stop leaking here.
-    if hasattr(device, "_source_started"):  # StreamingCaptureDevice duck-type
-        if (
-            getattr(device, "_disabled", False)
-            or getattr(device, "_secure_hold", False)
-            or getattr(device, "_black_streak", False)
-        ):
-            return "screencap"
-        return "scrcpy"
-    return None
+    if not callable(reporter):
+        return None
+    try:
+        value = reporter()
+    except Exception:  # a telemetry probe must never break the move
+        return None
+    return value if isinstance(value, str) else None
 
 
 class _MoveCounters:
