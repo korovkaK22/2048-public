@@ -14,8 +14,9 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-import bot2048.runner.cli as cli
+import bot2048.runner.cli.cmd_play as cmd_play
 from bot2048.device.humanizer import SWIPE_MS_ENV_VAR
+from bot2048.runner.cli import app
 from bot2048.runner.live import LiveConfig
 from bot2048.runner.live_config import LIVE_SWIPE_DURATION_MS
 
@@ -45,17 +46,17 @@ class _StubDevice:
 def captured_configs(monkeypatch: pytest.MonkeyPatch) -> list[LiveConfig]:
     """Run ``play`` for real but record every LiveConfig it builds."""
     configs: list[LiveConfig] = []
-    real_config = cli.LiveConfig
+    real_config = cmd_play.LiveConfig
 
     def record(**kwargs: Any) -> LiveConfig:
         config = real_config(**kwargs)
         configs.append(config)
         return config
 
-    monkeypatch.setattr(cli, "LiveConfig", record)
-    monkeypatch.setattr(cli, "_make_vision", lambda path: _StubVision())
-    monkeypatch.setattr(cli, "_connect", lambda serial: _StubDevice())
-    monkeypatch.setattr(cli, "_run_guarded", lambda **kwargs: None)
+    monkeypatch.setattr(cmd_play, "LiveConfig", record)
+    monkeypatch.setattr(cmd_play, "_make_vision", lambda path: _StubVision())
+    monkeypatch.setattr(cmd_play, "_connect", lambda serial: _StubDevice())
+    monkeypatch.setattr(cmd_play, "_run_guarded", lambda **kwargs: None)
     monkeypatch.delenv(SWIPE_MS_ENV_VAR, raising=False)
     return configs
 
@@ -63,7 +64,7 @@ def captured_configs(monkeypatch: pytest.MonkeyPatch) -> list[LiveConfig]:
 def test_unset_flag_resolves_to_live_default(
     captured_configs: list[LiveConfig],
 ) -> None:
-    result = runner.invoke(cli.app, _BASE_ARGS)
+    result = runner.invoke(app, _BASE_ARGS)
     assert result.exit_code == 0, result.output
     assert captured_configs[0].swipe_duration_ms == LIVE_SWIPE_DURATION_MS
 
@@ -71,7 +72,7 @@ def test_unset_flag_resolves_to_live_default(
 def test_explicit_flag_wins_over_live_default(
     captured_configs: list[LiveConfig],
 ) -> None:
-    result = runner.invoke(cli.app, [*_BASE_ARGS, "--swipe-duration", "80"])
+    result = runner.invoke(app, [*_BASE_ARGS, "--swipe-duration", "80"])
     assert result.exit_code == 0, result.output
     assert captured_configs[0].swipe_duration_ms == 80
 
@@ -83,7 +84,7 @@ def test_env_var_suppresses_live_default(
     # With BOT2048_SWIPE_MS set the CLI must leave swipe_duration_ms unset so
     # the humanizer's env-profile path keeps honoring the operator override.
     monkeypatch.setenv(SWIPE_MS_ENV_VAR, "60")
-    result = runner.invoke(cli.app, _BASE_ARGS)
+    result = runner.invoke(app, _BASE_ARGS)
     assert result.exit_code == 0, result.output
     assert captured_configs[0].swipe_duration_ms is None
 
