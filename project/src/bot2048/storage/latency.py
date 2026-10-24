@@ -18,6 +18,20 @@ and ``$.engine_ms`` / ``$.prefetch_hit`` are written by the strategy wrapper
 Verdict ("слабина"): the phase with the largest MEAN contribution to the
 critical path; search contributions are weighted by ``1 - hidden``.
 
+Loop-gap metric (design-strategy-logging §5.1, the before/after yardstick for
+the async recorder): the live runner stamps every committed move with
+``$.move.t_commit`` (``time.monotonic()``) and the previous move's persist
+cost ``$.move.prev_commit_ms``. Consecutive plies of one game give::
+
+    gap_ms         = (t_commit[n] - t_commit[n-1]) * 1000
+    unaccounted_ms = gap_ms - critical_ms[n]
+
+i.e. everything between two commits that the phase timer never billed:
+the recorder flush + cadence log of move n-1, the vision snapshot, the
+ladder/control tick, loop overhead. Reported as p50/p95/p99/max per
+experiment next to ``prev_commit_ms``; both stay silent for rows recorded
+before the keys existed.
+
 Read-only: the connection is opened with ``mode=ro`` -- no schema changes,
 no writes, the frozen recording/storage contracts are untouched.
 """
@@ -55,11 +69,16 @@ _TIMING_COLUMNS = ",\n           ".join(
 _BASE_CTE = f"""
 t AS (
     SELECT g.experiment_id AS experiment,
+           m.game_id AS game_id,
+           m.ply AS ply,
            {_TIMING_COLUMNS},
            m.eval_ms AS eval_ms,
            CAST(json_extract(m.eval_details_json, '$.engine_ms') AS REAL) AS engine_ms,
            json_extract(m.eval_details_json, '$.prefetch_hit') AS prefetch_hit,
-           COALESCE(json_extract(m.eval_details_json, '$.prefetch_hit'), 0) AS hidden
+           COALESCE(json_extract(m.eval_details_json, '$.prefetch_hit'), 0) AS hidden,
+           CAST(json_extract(m.eval_details_json, '$.move.t_commit') AS REAL) AS t_commit,
+           CAST(json_extract(m.eval_details_json, '$.move.prev_commit_ms') AS REAL)
+               AS prev_commit_ms
     FROM moves m
     JOIN games g ON g.id = m.game_id
     WHERE json_extract(m.eval_details_json, '$.timing') IS NOT NULL
@@ -153,6 +172,49 @@ WHERE json_extract(m.eval_details_json, '$.timing') IS NOT NULL
 GROUP BY g.experiment_id
 """
 
+# -- SQL 2c: loop gap -- unaccounted_ms + prev_commit_ms percentiles ---------------
+# ``LAG`` pairs consecutive stamped plies of ONE game (WHERE runs before the
+# window, so rows without ``t_commit`` -- older telemetry -- never break a
+# pair; a mixed DB at worst spans one gap over the unstamped rows). The
+# critical path subtracted is that of move n, the move whose timed phases lie
+# INSIDE the gap ``n-1 -> n``; ``prev_commit_ms`` on the same row is the
+# persist cost of move n-1, also inside that gap. p99 joins the usual
+# nearest-rank set because the metric exists to catch the flush/checkpoint
+# spikes, which live in the tail.
+GAP_SQL = f"""
+WITH {_BASE_CTE},
+gaps AS (
+    SELECT experiment,
+           prev_commit_ms,
+           (t_commit - LAG(t_commit) OVER (PARTITION BY game_id ORDER BY ply)) * 1000.0
+               - (total_ms + (1 - hidden) * eval_ms) AS unaccounted_ms
+    FROM t
+    WHERE t_commit IS NOT NULL
+),
+samples(experiment, metric, ms) AS (
+    SELECT experiment, 'unaccounted', unaccounted_ms FROM gaps
+    WHERE unaccounted_ms IS NOT NULL
+    UNION ALL
+    SELECT experiment, 'prev_commit', prev_commit_ms FROM gaps
+    WHERE prev_commit_ms IS NOT NULL
+),
+ranked AS (
+    SELECT experiment, metric, ms,
+           ROW_NUMBER() OVER (PARTITION BY experiment, metric ORDER BY ms) AS rn,
+           COUNT(*)    OVER (PARTITION BY experiment, metric)              AS n
+    FROM samples
+)
+SELECT experiment, metric,
+       MAX(n)                                                   AS n,
+       MAX(CASE WHEN rn = ((n - 1) * 50) / 100 + 1 THEN ms END) AS p50,
+       MAX(CASE WHEN rn = ((n - 1) * 95) / 100 + 1 THEN ms END) AS p95,
+       MAX(CASE WHEN rn = ((n - 1) * 99) / 100 + 1 THEN ms END) AS p99,
+       MAX(ms)                                                  AS max_ms
+FROM ranked
+GROUP BY experiment, metric
+ORDER BY experiment, metric
+"""
+
 # -- SQL 3: mean contribution of every phase to the critical path ----------------
 # Both the engine/IPC split (NULL-skipped when engine_ms is absent) and the
 # combined ``search`` fallback are computed; the caller keeps exactly one.
@@ -197,6 +259,18 @@ class Contribution:
 
 
 @dataclass(frozen=True)
+class GapRow:
+    """Percentiles of one loop-gap metric (``unaccounted`` / ``prev_commit``)."""
+
+    metric: str
+    n: int  # samples: stamped ply pairs (unaccounted) / rows with the key (prev_commit)
+    p50: float
+    p95: float
+    p99: float
+    max_ms: float
+
+
+@dataclass(frozen=True)
 class ExperimentLatency:
     """The full latency report of one experiment."""
 
@@ -215,11 +289,26 @@ class ExperimentLatency:
     capture_screencap_pct: float | None = None  # of those, served by screencap
     apk_moves: int = 0  # moves verified from an APK packet that reported its age
     apk_age_avg_ms: float | None = None  # mean host mailbox dwell of those packets
+    # -- loop gap (design-strategy-logging §5.1) ------------------------------------
+    gaps: tuple[GapRow, ...] = ()  # empty when no move carried ``t_commit``
 
     @property
     def bottleneck(self) -> str:
         """The verdict: the phase dominating the critical path."""
         return self.contributions[0].phase
+
+    @property
+    def unaccounted(self) -> GapRow | None:
+        """``gap_ms - critical_ms`` percentiles, ``None`` before the stamp existed."""
+        return self._gap("unaccounted")
+
+    @property
+    def prev_commit(self) -> GapRow | None:
+        """Persist-section cost percentiles, ``None`` before the key existed."""
+        return self._gap("prev_commit")
+
+    def _gap(self, metric: str) -> GapRow | None:
+        return next((row for row in self.gaps if row.metric == metric), None)
 
 
 def open_readonly(db_path: str | Path) -> sqlite3.Connection:
@@ -243,6 +332,7 @@ def collect_latency(
         crit = conn.execute(CRITICAL_SQL, args).fetchall()
         contrib = conn.execute(BOTTLENECK_SQL, args).fetchall()
         reliability = {r[0]: r for r in conn.execute(RELIABILITY_SQL, args).fetchall()}
+        gap_rows = conn.execute(GAP_SQL, args).fetchall()
         capture_modes = _capture_modes(conn)
     except sqlite3.Error as exc:
         raise StorageError(f"latency query failed: {exc}") from exc
@@ -266,6 +356,11 @@ def collect_latency(
             apk_moves,
             apk_age_avg_ms,
         ) = _reliability(reliability.get(experiment_id))
+        gaps = tuple(
+            GapRow(metric=r[1], n=int(r[2]), p50=r[3], p95=r[4], p99=r[5], max_ms=r[6])
+            for r in gap_rows
+            if r[0] == experiment_id
+        )
         reports.append(
             ExperimentLatency(
                 experiment_id=experiment_id,
@@ -282,6 +377,7 @@ def collect_latency(
                 capture_screencap_pct=screencap_pct,
                 apk_moves=apk_moves,
                 apk_age_avg_ms=apk_age_avg_ms,
+                gaps=gaps,
             )
         )
     log.debug(

@@ -140,6 +140,12 @@ class SwipeController:
         self._clock = clock
         self._sleep = sleep
         self.debug_capture = debug_capture
+        #: Wall cost (ms) of the PREVIOUS committed move's persist section
+        #: (cadence log + MovePlayed/TileSpawned record + ring); stashed here
+        #: and written into the NEXT move's ``eval_details["move"]`` as
+        #: ``prev_commit_ms`` (design-strategy-logging §5.1 -- the recorder-cost
+        #: probe that isolates the DB/log tail from the vision snapshot).
+        self._prev_commit_ms: float | None = None
 
     # -- one move ---------------------------------------------------------------
 
@@ -552,6 +558,13 @@ class SwipeController:
         parsed: Board,
     ) -> None:
         now = time.time()
+        # Monotonic commit stamp: ``db latency`` pairs consecutive plies of one
+        # game (``gap_ms = t_commit[n] - t_commit[n-1]``) and subtracts the
+        # critical path of move n to expose the UNACCOUNTED loop tail --
+        # recorder flush, vision snapshot, ladder, control tick -- that the
+        # phase timer never bills. Same process for a whole game, so the
+        # monotonic origin is irrelevant; a float, no I/O.
+        t_commit = time.monotonic()
         score_total = state.score_total + predicted.score_gained
         # Per-move phase breakdown rides in the free-form eval_details bucket
         # (frozen recording contract untouched). The strategy's own dict is
@@ -565,11 +578,19 @@ class SwipeController:
         # per-cell vision-fallback picture -- both free-form neighbors of the
         # frozen ``timing`` bucket, never inside it.
         move_counts = self._counters.snapshot()
+        # Latency-gap probes (design-strategy-logging §5.1): additive neighbours
+        # of the frozen ``timing`` bucket, same pattern as ``apk_age_ms``.
+        # ``prev_commit_ms`` is omitted on ply 0 -- the stashed value would
+        # belong to the previous GAME's last move.
+        move_counts["t_commit"] = t_commit
+        if state.ply > 0 and self._prev_commit_ms is not None:
+            move_counts["prev_commit_ms"] = self._prev_commit_ms
         details["move"] = move_counts
         vision = self._vision_snapshot()
         if vision is not None:
             details["vision"] = vision
         self._accumulate_game_telemetry(state, timing, vision, parsed)
+        t_persist = time.monotonic()
         # INFO (not DEBUG): the health-monitor greps this every
         # move for the cadence + swipe-miss signal, so it MUST survive the
         # default INFO run level (docs/ops-monitoring.md). It is the ONE
@@ -616,6 +637,9 @@ class SwipeController:
                 eval_ms=decision.eval_ms,
                 score_total=score_total,
             )
+        # The persist section just measured (log + 2x record + ring) is THIS
+        # move's cost; it rides in the NEXT move's row as ``prev_commit_ms``.
+        self._prev_commit_ms = (time.monotonic() - t_persist) * 1000.0
         state.board = parsed
         # Genuine progress: a move committed on a healthy board, so any prior
         # auth->terminal-popup restart streak did NOT stall. Clear the loop-guard

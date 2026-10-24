@@ -18,14 +18,27 @@ Two properties matter on the live per-move hot path (docs/ops-monitoring.md
   move loop only enqueues a record. :func:`stop_logging` (registered via
   ``atexit`` and called from the session guard) drains the queue on shutdown so
   no line is lost on a clean exit or a FATAL.
+* **The queue is bounded** (design-strategy-logging §5.5, P11). A stalled
+  console consumer (Windows QuickEdit "mark" freezing stdout, a slow
+  ``tail | grep``) used to grow an unbounded queue without limit and make
+  ``stop_logging`` drain forever. Now the queue holds at most
+  :data:`LOG_QUEUE_MAXSIZE` records; on ``Full`` a DEBUG/INFO record is dropped
+  and counted, a WARNING+ record waits up to :data:`WARN_BLOCK_S` for room and
+  is dropped (counted) only then. The listener reports the count as ONE
+  ``logging.dropped n=...`` WARNING once the queue has room again, and
+  :func:`stop_logging` gives up draining after its timeout and returns how many
+  records were left behind instead of hanging.
 """
 
 from __future__ import annotations
 
 import atexit
+import contextlib
 import logging
 import queue
 import sys
+import threading
+import time
 from datetime import datetime
 from logging.handlers import QueueHandler, QueueListener, RotatingFileHandler
 from pathlib import Path
@@ -40,12 +53,47 @@ _MAX_JSONL_BYTES: Final[int] = 50 * 1024 * 1024
 """Size cap per daily JSONL file (docs/ops-monitoring.md §2.1); on overflow
 the current file is rotated to ``bot2048-YYYYMMDD-1.jsonl``, ``-2``, ..."""
 
+LOG_QUEUE_MAXSIZE: Final[int] = 50_000
+"""Bounded depth of the async log queue; beyond it DEBUG/INFO records are dropped
+(counted) and WARNING+ records wait :data:`WARN_BLOCK_S` for room first."""
+
+WARN_BLOCK_S: Final[float] = 0.010
+"""How long a WARNING+ record may block the emitting thread on a full queue."""
+
+STOP_TIMEOUT_S: Final[float] = 10.0
+"""Default drain budget of :func:`stop_logging`; past it the remainder is abandoned."""
+
+#: The queue carries LogRecords plus the listener's ``None`` stop sentinel.
+_LogQueue = queue.Queue[logging.LogRecord | None]
+
 #: The async log pump: a background QueueListener drains records off the
 #: per-move critical path into the (slow) JSONL file + console. Module-global so
 #: a repeat :func:`setup_logging` can tear the previous one down and
 #: :func:`stop_logging` (atexit / session-guard finally) can flush every
 #: buffered line on shutdown.
-_listener: QueueListener | None = None
+_listener: _BoundedQueueListener | None = None
+
+
+class _DropCounter:
+    """Thread-safe count of records dropped on a full queue (reset on report)."""
+
+    __slots__ = ("_lock", "_n")
+
+    def __init__(self) -> None:
+        self._n = 0
+        self._lock = threading.Lock()
+
+    def add(self, n: int = 1) -> None:
+        with self._lock:
+            self._n += n
+
+    def peek(self) -> int:
+        return self._n  # racy by design: a cheap "anything to report?" probe
+
+    def take(self) -> int:
+        with self._lock:
+            n, self._n = self._n, 0
+        return n
 
 
 def _rotated_name(default_name: str) -> str:
@@ -74,23 +122,117 @@ class _NonFormattingQueueHandler(QueueHandler):
         return record
 
 
-def _stop_listener() -> None:
-    """Drain + join the async pump if one is running (idempotent)."""
+class _BoundedQueueHandler(_NonFormattingQueueHandler):
+    """Drop-on-Full policy for the bounded queue (design-strategy-logging §5.5).
+
+    DEBUG/INFO: dropped immediately and counted -- the per-move cadence line is
+    INFO, and losing a few of them under a frozen console beats stalling the
+    move loop or growing memory without bound. WARNING+: wait up to
+    :data:`WARN_BLOCK_S` for room (incident lines are worth 10 ms), then drop and
+    count too, so a dead consumer can never wedge the emitting thread.
+    """
+
+    def __init__(self, log_queue: _LogQueue, dropped: _DropCounter) -> None:
+        super().__init__(log_queue)
+        self._q = log_queue
+        self._dropped = dropped
+
+    def enqueue(self, record: logging.LogRecord) -> None:
+        try:
+            self._q.put_nowait(record)
+            return
+        except queue.Full:
+            pass
+        if record.levelno >= logging.WARNING:
+            try:
+                self._q.put(record, timeout=WARN_BLOCK_S)
+                return
+            except queue.Full:
+                pass
+        self._dropped.add()
+
+
+class _BoundedQueueListener(QueueListener):
+    """Listener that reports drops and whose :meth:`stop` is bounded in time.
+
+    After every handled record it checks the drop counter; when records were
+    lost and the queue has room again (below half) it emits ONE
+    ``logging.dropped n=<count>`` WARNING through the normal structlog path, so
+    the gap is visible in both sinks exactly where it happened.
+    """
+
+    def __init__(
+        self,
+        log_queue: _LogQueue,
+        *handlers: logging.Handler,
+        dropped: _DropCounter,
+        maxsize: int,
+        respect_handler_level: bool = False,
+    ) -> None:
+        super().__init__(log_queue, *handlers, respect_handler_level=respect_handler_level)
+        self._q = log_queue
+        self._dropped = dropped
+        self._maxsize = maxsize
+        self._room = max(1, maxsize // 2)
+
+    def handle(self, record: logging.LogRecord) -> None:
+        super().handle(record)
+        if self._dropped.peek() and self._q.qsize() < self._room:
+            self._report_dropped()
+
+    def _report_dropped(self) -> None:
+        n = self._dropped.take()
+        if n:
+            structlog.get_logger(__name__).warning("logging.dropped", n=n, maxsize=self._maxsize)
+
+    def stop_within(self, timeout: float) -> int:
+        """Drain for at most ``timeout`` seconds; return the records left behind.
+
+        The stdlib :meth:`stop` does ``put_nowait(sentinel)`` + an unbounded
+        ``join`` -- on a full queue behind a frozen console that raises
+        ``queue.Full`` or hangs forever. Here the sentinel is offered with a
+        timeout, the join is bounded, and a thread still alive afterwards is
+        left as the daemon it is (it keeps draining if the consumer ever wakes).
+        """
+        thread = self._thread
+        if thread is None:
+            return 0
+        deadline = time.monotonic() + max(0.0, timeout)
+        self._report_dropped()  # last chance to say how much was lost
+        # ``None`` is QueueListener._sentinel: _monitor exits on it. A stuck
+        # consumer keeps the queue full -> Full; the bounded join below is then
+        # what limits us.
+        with contextlib.suppress(queue.Full):
+            self._q.put(None, timeout=max(0.0, min(timeout, 1.0)))
+        thread.join(max(0.0, deadline - time.monotonic()))
+        if thread.is_alive():
+            return self._q.qsize()
+        self._thread = None
+        return 0
+
+
+def _stop_listener(timeout: float = STOP_TIMEOUT_S) -> int:
+    """Drain + join the async pump if one is running (idempotent); records left."""
     global _listener
-    if _listener is not None:
-        _listener.stop()  # enqueues a sentinel, drains the queue, joins the thread
-        _listener = None
+    if _listener is None:
+        return 0
+    listener, _listener = _listener, None
+    return listener.stop_within(timeout)
 
 
-def stop_logging() -> None:
+def stop_logging(timeout: float = STOP_TIMEOUT_S) -> int:
     """Flush + stop the async log pump so no buffered line is lost on shutdown.
 
     Registered via ``atexit`` by :func:`setup_logging` and also safe to call
     explicitly from the session guard's ``finally`` (idempotent). After it runs
     the root logger still enqueues records, but nothing drains them until the
     next :func:`setup_logging`; call it only when the process is winding down.
+
+    Draining is bounded by ``timeout``: a consumer that is still stuck when it
+    expires is abandoned and the number of records left in the queue is
+    returned (``0`` on a clean drain) so the caller can say so on stderr.
     """
-    _stop_listener()
+    return _stop_listener(timeout)
 
 
 def setup_logging(
@@ -98,6 +240,7 @@ def setup_logging(
     log_dir: Path = _DEFAULT_LOG_DIR,
     *,
     level: int | str = logging.INFO,
+    queue_maxsize: int = LOG_QUEUE_MAXSIZE,
 ) -> Path | None:
     """Configure structlog + stdlib logging for the whole process.
 
@@ -108,8 +251,9 @@ def setup_logging(
 
     ``level`` gates emission: at the default ``INFO`` the per-move debug lines
     are dropped cheaply (``--verbose`` -> ``DEBUG`` brings them back). Both
-    sinks run behind a background queue, so the caller (or ``atexit``) MUST
-    :func:`stop_logging` on shutdown to flush.
+    sinks run behind a background queue bounded at ``queue_maxsize`` records
+    (see the module docstring for the drop policy), so the caller (or
+    ``atexit``) MUST :func:`stop_logging` on shutdown to flush.
 
     Safe to call repeatedly (e.g. in tests) -- the previous async pump and
     handlers are torn down and replaced.
@@ -186,17 +330,22 @@ def setup_logging(
         )
         sinks.append(file_handler)
 
-    # Async pump: the hot path only enqueues (QueueHandler.emit -> queue.put on
-    # an unbounded queue, so a move never blocks on the slow JSONL write); the
-    # listener thread does the ProcessorFormatter render + file I/O. A fatal
-    # still flushes via stop_logging (atexit + the session guard's finally).
+    # Async pump: the hot path only enqueues (QueueHandler.emit -> put_nowait on
+    # a BOUNDED queue, so a move never blocks on the slow JSONL write and a
+    # frozen console cannot grow memory without limit); the listener thread
+    # does the ProcessorFormatter render + file I/O. A fatal still flushes via
+    # stop_logging (atexit + the session guard's finally), bounded in time.
     global _listener
-    log_queue: queue.Queue[logging.LogRecord] = queue.Queue(-1)
-    _listener = QueueListener(log_queue, *sinks, respect_handler_level=True)
+    dropped = _DropCounter()
+    maxsize = max(1, queue_maxsize)
+    log_queue: _LogQueue = queue.Queue(maxsize=maxsize)
+    _listener = _BoundedQueueListener(
+        log_queue, *sinks, dropped=dropped, maxsize=maxsize, respect_handler_level=True
+    )
     _listener.start()
     atexit.register(_stop_listener)
 
-    root.addHandler(_NonFormattingQueueHandler(log_queue))
+    root.addHandler(_BoundedQueueHandler(log_queue, dropped))
     root.setLevel(level)
     return jsonl_path
 

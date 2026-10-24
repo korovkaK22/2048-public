@@ -14,6 +14,7 @@ import typer
 
 from bot2048.device.humanizer import SWIPE_MS_ENV_VAR
 from bot2048.device.supervisor import Supervisor
+from bot2048.recording import Recorder
 from bot2048.runner.cli.capture import _make_board_source, _make_capture_device
 from bot2048.runner.cli.common import _connect, _NotifyFn, _Runner, console
 from bot2048.runner.cli.guard import _run_guarded
@@ -23,7 +24,6 @@ from bot2048.runner.cli.vision_bind import _make_vision
 from bot2048.runner.lifecycle import RunContext
 from bot2048.runner.live import SETTLE_DELAY_DEFAULT_S, LiveConfig, LiveRunner
 from bot2048.runner.live_config import LIVE_SWIPE_DURATION_MS, SETTLE_DELAY_APK_S
-from bot2048.storage.sqlite_recorder import SqliteRecorder
 from bot2048.vision.calibration import DEFAULT_CALIBRATION_PATH
 
 
@@ -383,7 +383,7 @@ def play(
             )
 
     def build(
-        ctx: RunContext, recorder: SqliteRecorder, supervisor: Supervisor, notify: _NotifyFn
+        ctx: RunContext, recorder: Recorder, supervisor: Supervisor, notify: _NotifyFn
     ) -> _Runner:
         return LiveRunner(
             device=capture_device,

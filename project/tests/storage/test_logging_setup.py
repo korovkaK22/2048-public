@@ -6,12 +6,15 @@ import io
 import json
 import logging
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
 import structlog
 
 from bot2048.logging_setup import (
+    LOG_QUEUE_MAXSIZE,
     bind_game_context,
     clear_game_context,
     setup_logging,
@@ -129,6 +132,100 @@ def test_console_no_ansi_when_stdout_not_a_tty(
         assert "live.move_timing" in captured
         assert "\x1b[" not in captured
     finally:
+        _teardown_logging()
+
+
+class _FrozenStdout(io.StringIO):
+    """stdout stand-in whose ``write`` blocks until released.
+
+    Models the Windows console QuickEdit "mark" freeze (or a stalled
+    ``tail | grep``): the console StreamHandler on the listener thread hangs in
+    ``write``, so nothing is dequeued until :attr:`release` is set.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.entered = threading.Event()  # the listener is now stuck in write()
+        self.release = threading.Event()
+
+    def write(self, s: str) -> int:
+        self.entered.set()
+        self.release.wait()
+        return super().write(s)
+
+    def isatty(self) -> bool:
+        return False
+
+
+def test_default_queue_is_bounded(tmp_path: Path) -> None:
+    try:
+        setup_logging(json_logs=False, log_dir=tmp_path / "logs")
+        (handler,) = logging.getLogger().handlers
+        assert isinstance(handler, logging.handlers.QueueHandler)
+        assert handler.queue.maxsize == LOG_QUEUE_MAXSIZE  # type: ignore[attr-defined]
+    finally:
+        _teardown_logging()
+
+
+def test_full_queue_drops_info_blocks_warn_briefly_and_reports_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Blocked console: INFO past the bound is dropped + counted, WARN waits <= 10 ms,
+    and the listener emits ONE ``logging.dropped n=...`` once there is room again."""
+    frozen = _FrozenStdout()
+    monkeypatch.setattr(sys, "stdout", frozen)
+    log_dir = tmp_path / "logs"
+    try:
+        jsonl_path = setup_logging(json_logs=True, log_dir=log_dir, queue_maxsize=4)
+        assert jsonl_path is not None
+        log = structlog.get_logger("bot2048.test")
+        log.info("first")  # the listener dequeues it and freezes in stdout.write
+        assert frozen.entered.wait(5.0)
+        for i in range(4):
+            log.info("fill", i=i)  # exactly fills the bounded queue
+        for i in range(10):
+            log.info("overflow", i=i)  # Full -> dropped immediately, counted
+        t0 = time.monotonic()
+        log.warning("important")  # Full -> waits WARN_BLOCK_S for room, then dropped
+        waited = time.monotonic() - t0
+        assert 0.005 <= waited < 1.0
+
+        frozen.release.set()
+        assert stop_logging(timeout=10.0) == 0  # clean drain once the console thaws
+
+        lines = [json.loads(line) for line in jsonl_path.read_text("utf-8").splitlines()]
+        events = [line["event"] for line in lines]
+        assert events == ["first", "fill", "fill", "fill", "fill", "logging.dropped"]
+        dropped = lines[-1]
+        assert dropped["level"] == "warning"
+        assert dropped["n"] == 11  # 10 INFO + the 1 WARN that could not get in
+        assert dropped["maxsize"] == 4
+    finally:
+        frozen.release.set()
+        _teardown_logging()
+
+
+def test_stop_logging_gives_up_on_a_stuck_consumer_and_reports_remainder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A console that never thaws must not hang shutdown: bounded, remainder returned."""
+    frozen = _FrozenStdout()
+    monkeypatch.setattr(sys, "stdout", frozen)
+    try:
+        setup_logging(json_logs=False, log_dir=tmp_path / "logs", queue_maxsize=3)
+        log = structlog.get_logger("bot2048.test")
+        log.info("first")
+        assert frozen.entered.wait(5.0)
+        for i in range(3):
+            log.info("fill", i=i)
+        t0 = time.monotonic()
+        left_behind = stop_logging(timeout=0.3)
+        elapsed = time.monotonic() - t0
+        assert left_behind == 3  # the 3 queued records (the sentinel never fitted)
+        assert elapsed < 3.0
+        assert stop_logging() == 0  # idempotent: nothing to stop any more
+    finally:
+        frozen.release.set()  # let the abandoned daemon thread drain and go idle
         _teardown_logging()
 
 

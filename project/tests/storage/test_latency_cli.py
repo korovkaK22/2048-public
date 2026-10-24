@@ -146,6 +146,26 @@ def reliability_db(tmp_path: Path) -> Path:
 
 
 @pytest.fixture()
+def gap_db(tmp_path: Path) -> Path:
+    """4 stamped moves (design §5.1): critical = 635 + 20 = 655 ms each.
+
+    ``t_commit`` gaps are 700 / 800 / 700 ms -> ``unaccounted`` = 45 / 145 / 45;
+    ``prev_commit_ms`` rides on plies 1..3 only (ply 0 has no previous move).
+    """
+    db = tmp_path / "gap.db"
+    stamps = (1000.0, 1000.7, 1001.5, 1002.2)
+    prev_commit = (None, 2.0, 3.0, 50.0)
+    details: list[dict[str, Any]] = []
+    for t_commit, prev in zip(stamps, prev_commit, strict=True):
+        move: dict[str, Any] = {"capture_count": 1, "swipe_attempts": 1, "t_commit": t_commit}
+        if prev is not None:
+            move["prev_commit_ms"] = prev
+        details.append({"timing": dict(TIMING), "move": move})
+    _record_game(db, "lat-gap", {"capture": "apk"}, details)
+    return db
+
+
+@pytest.fixture()
 def search_db(tmp_path: Path) -> Path:
     """3 timed moves where the (unsplit) search dwarfs every move phase."""
     db = tmp_path / "search.db"
@@ -196,6 +216,24 @@ class TestLatencyCommand:
         assert "fallback 25%" in flat
         # apk packet-age line: mailbox dwell avg of the 3 apk-served moves
         assert "apk packet-age: avg 10.0 ms in mailbox (3 moves)" in flat
+
+    def test_loop_gap_lines_shown_when_stamped(self, gap_db: Path) -> None:
+        result = runner.invoke(app, ["latency", "--db", str(gap_db)])
+        assert result.exit_code == 0, result.output
+        flat = _flat(result.output)
+        assert (
+            "loop gap, unaccounted (gap - critical): p50 45.0 / p95 45.0 / p99 45.0 / "
+            "max 145.0 ms (n=3)"
+        ) in flat
+        assert (
+            "loop gap, prev_commit (persist section): p50 3.0 / p95 3.0 / p99 3.0 / "
+            "max 50.0 ms (n=3)"
+        ) in flat
+
+    def test_loop_gap_silent_without_stamp(self, settle_db: Path) -> None:
+        result = runner.invoke(app, ["latency", "--db", str(settle_db)])
+        assert result.exit_code == 0, result.output
+        assert "loop gap" not in result.output
 
     def test_experiment_filter_excludes_others(self, settle_db: Path) -> None:
         result = runner.invoke(
@@ -302,3 +340,33 @@ class TestCollectLatency:
             assert collect_latency(conn, "absent") == ()
         finally:
             conn.close()
+
+    def test_loop_gap_math(self, gap_db: Path) -> None:
+        conn = open_readonly(gap_db)
+        try:
+            report = collect_latency(conn)[0]
+        finally:
+            conn.close()
+        unaccounted = report.unaccounted
+        assert unaccounted is not None
+        # 4 stamped plies -> 3 consecutive pairs; gap - critical(n) = 45/145/45
+        assert unaccounted.n == 3
+        assert unaccounted.p50 == pytest.approx(45.0)
+        assert unaccounted.p95 == pytest.approx(45.0)
+        assert unaccounted.p99 == pytest.approx(45.0)
+        assert unaccounted.max_ms == pytest.approx(145.0)
+        prev = report.prev_commit
+        assert prev is not None
+        assert prev.n == 3  # ply 0 carries no prev_commit_ms
+        assert prev.p50 == pytest.approx(3.0)
+        assert prev.max_ms == pytest.approx(50.0)
+
+    def test_loop_gap_none_before_stamp_existed(self, settle_db: Path) -> None:
+        conn = open_readonly(settle_db)
+        try:
+            report = collect_latency(conn)[0]
+        finally:
+            conn.close()
+        assert report.gaps == ()
+        assert report.unaccounted is None
+        assert report.prev_commit is None
