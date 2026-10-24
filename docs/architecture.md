@@ -25,7 +25,7 @@ monobank-2048/
     │   ├── device/           ADB, захоплення екрана, humanizer
     │   ├── runner/           живий цикл і research-режим
     │   ├── ondevice/         хостова частина протоколу APK
-    │   ├── tgnotify.py       Telegram-мiст (алерти, heartbeat, інциденти)
+    │   ├── tgnotify/         Telegram-мiст (алерти, heartbeat, інциденти)
     │   ├── logging_setup.py  structlog: JSON у logs/ + читабельна консоль
     │   ├── recording.py      контракт подій гри (НЕ міняти без узгодження)
     │   └── cli.py            typer-CLI `bot2048` (sim / db / vision / live)

@@ -3,7 +3,7 @@
 > Опис **реалізованої** підсистеми надійності живих прогонів. Дата першої версії: 2026-07-10.
 > Код: `src/bot2048/runner/{alerts,escalation,heartbeat,incidents,lifecycle}.py`,
 > `src/bot2048/storage/ops_schema.py`, `src/bot2048/device/supervisor.py`,
-> вотчер — `src/bot2048/tgnotify.py` (`python -m bot2048.tgnotify watch`).
+> вотчер — `src/bot2048/tgnotify/watch.py` (`python -m bot2048.tgnotify watch`).
 > Пов'язане: `docs/architecture.md`, `docs/device-ui-notes.md`, `vision/states.py` (ScreenState),
 > `logging_setup.py` (structlog), `storage/schema.py` (SQLite). Заморожені контракти не зачіпаються —
 > усе тут адитивне.
@@ -256,7 +256,7 @@ watchdog має спрацювати саме тоді.
 project\.venv\Scripts\python.exe -m bot2048.tgnotify watch --root .
 ```
 
-Як він працює (`tgnotify.py::watch`):
+Як він працює (`tgnotify/watch.py::watch`):
 
 - **Курсор — номер обробленого рядка** у `logs/tg_alerts.cursor` (алерт-файл малий, повне
   перечитування раз на 2 с дешевше і надійніше за byte-offset, який губить рядки між

@@ -18,7 +18,7 @@
 - [`live-setup.md`](live-setup.md) — від голого Windows-хоста до бота в грі: adb, scrcpy, калібрування, скріншоти.
 - [`ops-playbook.md`](ops-playbook.md) — операційні граблі: Monitor, фонові процеси, ADB-по-WiFi, CLI/venv/тести. Читати перед живими прогонами.
 - [`ops-monitoring.md`](ops-monitoring.md) — підсистема надійності живих прогонів: алерти, heartbeat, incident-бандли, escalation.
-- [`telegram-notify.md`](telegram-notify.md) — Telegram-міст (`tgnotify.py`): сповіщення й команди для користувача.
+- [`telegram-notify.md`](telegram-notify.md) — Telegram-міст (пакет `tgnotify/`): сповіщення й команди для користувача.
 - [`ondevice-vision-design.md`](ondevice-vision-design.md) — дизайн розпізнавання дошки на телефоні (22-байтний board-пакет замість повних кадрів).
 
 ## Стратегія й рушій

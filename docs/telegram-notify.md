@@ -1,6 +1,6 @@
 # Telegram-міст — сповіщення та команди для користувача
 
-> Опис **реалізованого** моста. Код: `src/bot2048/tgnotify.py`. Дата першої версії: 2026-07-10.
+> Опис **реалізованого** моста. Код: пакет `src/bot2048/tgnotify/` (до 2026-10 — один файл `tgnotify.py`). Дата першої версії: 2026-07-10.
 > Пов'язане: `docs/ops-monitoring.md` (рівні, схема alerts.jsonl v1, heartbeat, incident-бандли),
 > `docs/architecture.md`, `docs/edge-cases.md`. Заморожені контракти не зачіпаються — усе адитивне.
 > Бот: `@your_bot`. Користувач: `@your_handle` (один; його chat_id = allowlist).
@@ -9,7 +9,7 @@
 
 ## TL;DR
 
-- Модуль `project/src/bot2048/tgnotify.py`: фоновий daemon-thread з чергою; API
+- Пакет `project/src/bot2048/tgnotify/` (`notifier.py` — ядро, `transport/outbox/commands` — міксини, `watch/bootstrap/cli`): фоновий daemon-thread з чергою; API
   `notify(level, code, text, photo_path=None)` — fire-and-forget, **ніколи** не блокує і не валить раннер.
 - Роутинг: FATAL/ERROR → завжди + фото з incident-бандла; WARN → тротлінг/дайджест; INFO-переходи
   станів → коротко. Сесійні: 🚫 «Бот працює — НЕ чіпай телефон» на старті, ✅ «телефон вільний» на стопі/краху.
@@ -40,7 +40,7 @@
 
 Шляхи файлів — відносно кореня repo (`monobank-2048`), як у `ops-monitoring.md`.
 
-## 2. Модуль `project/src/bot2048/tgnotify.py`
+## 2. Пакет `project/src/bot2048/tgnotify/`
 
 ### 2.1. Публічний API
 
@@ -111,7 +111,7 @@ loop:
 | INFO-переходи | коротко, без тротлінгу | ні | старт партії, game over + рахунок, рестарт, resume |
 
 `ACTION_REQUIRED = {"AUTH_REQUIRED", "RESTART_LOOP", "DEVICE_LOST(FATAL)", "WATCHDOG_TIMEOUT"}` —
-константа-set у tgnotify.py; для них у тексті перший рядок: **«⚠️ ПОТРІБЕН ТИ»** + що саме зробити
+константа-set у `tgnotify/formatting.py`; для них у тексті перший рядок: **«⚠️ ПОТРІБЕН ТИ»** + що саме зробити
 (для `AUTH_REQUIRED`: «введи ПІН у застосунку і дай /resume»). Поки action_required не погашено
 `/ack` — нагадування кожні 10 хв тим самим текстом (лічильник у пам'яті + `logs/tg_ack.flag`).
 

@@ -1089,7 +1089,7 @@ project/
     ondevice/    хостова частина протоколу APK (22-байтний пакет + CRC)
     sim/         симулятор і телеметрія «чому партія померла»
     storage/     SQLite: схема, recorder, репозиторії
-    tgnotify.py  Telegram-міст: алерти, heartbeat, інцидент-бандли
+    tgnotify/    Telegram-міст: алерти, heartbeat, інцидент-бандли
   tests/         860 тестів
   tools/
     engine2048/  Go: базовий рушій, ручна евристика (відтворюваний baseline)
