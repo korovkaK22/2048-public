@@ -213,13 +213,14 @@ loop:
   дати основному шляху відправити першим) — чекає; після grace без запису в журналі — шле сам.
   Гірший кейс подвійної доставки прийнятний; втрата — ні.
 
-### 6.3. CLI-обгортка `scripts/tg_send.ps1`
+### 6.3. CLI-обгортка `scripts/tg_send.sh`
 
-`scripts/tg_send.ps1 "текст" [шлях_до_фото]` — для ручних/скриптових відправок:
-- читає `.secrets/telegram.env` (парсер `KEY=VALUE`), `Invoke-RestMethod` → sendMessage або
-  sendPhoto (`-Form` для multipart; PowerShell 5.1 без `-Form` → фолбек: викликати
-  `python -m bot2048.tgnotify send "text" [photo]`); таймаут 10 с, exit 0/1;
-- токен лише у змінній процесу; `-Verbose`/ехо URL заборонені; помилку друкувати без URL.
+`scripts/tg_send.sh "текст" [шлях_до_фото]` — для ручних/скриптових відправок на будь-якій ОС:
+- тонка bash-обгортка над `python -m bot2048.tgnotify send "text" [photo] --root .` (той самий
+  `TgNotifier`/transport, що й у раннера: `.secrets/telegram.env`, таймаути, outbox); exit 0/1;
+- токен лише в пам'яті `TgConfig`; у argv і в логах його нема; помилка друкується без URL.
+- Колишній `tg_send.ps1` (PowerShell, `Invoke-RestMethod`) видалено — Windows-only і дублював
+  транспорт.
 
 ## 7. Bootstrap `TG_CHAT_ID`
 

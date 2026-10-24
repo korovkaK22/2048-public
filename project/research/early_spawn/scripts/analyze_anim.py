@@ -10,25 +10,27 @@ samples the 16 calibrated cell centers per frame, and reports:
     center -> false single-frame reads).
 
 Usage: python analyze_anim.py <clip.mp4> [label]
-Run from project/. Requires the bundled ffmpeg/ffprobe.
+Run from project/. Requires ffmpeg/ffprobe on PATH (brew/apt/winget) or the
+Windows release bundle under project/tools/ffmpeg/.
 """
 from __future__ import annotations
 
 import glob
 import json
 import os
+import shutil
 import subprocess
 import sys
 
 from PIL import Image
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
-FF = os.path.join(
-    ROOT, "project/tools/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe"
+_BUNDLED_FFMPEG_BIN = os.path.join(
+    ROOT, "project/tools/ffmpeg/ffmpeg-master-latest-win64-gpl/bin"
 )
-FP = os.path.join(
-    ROOT, "project/tools/ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffprobe.exe"
-)
+# PATH first on every OS; the Windows bundle is only the fallback.
+FF = shutil.which("ffmpeg") or os.path.join(_BUNDLED_FFMPEG_BIN, "ffmpeg.exe")
+FP = shutil.which("ffprobe") or os.path.join(_BUNDLED_FFMPEG_BIN, "ffprobe.exe")
 CAL = json.load(open(os.path.join(ROOT, "project/data/calibration.json")))
 CENTERS = CAL["cell_centers"]
 PAL = CAL["palette"]

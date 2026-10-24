@@ -10,6 +10,7 @@ Read-only with respect to src/ -- only imports it.
 """
 from __future__ import annotations
 
+import shutil
 import sys
 from pathlib import Path
 
@@ -19,9 +20,11 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from bot2048.device.capture import ScrcpyConfig  # noqa: E402
 from bot2048.device.scrcpy import AdbScrcpyRunner, ScrcpySource  # noqa: E402
 
-ADB = str(
+# PATH first (brew / apt / winget); the Windows SDK location is only a fallback.
+ADB = shutil.which("adb") or str(
     Path.home() / "AppData/Local/Android/Sdk/platform-tools/adb.exe"
 )
+FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
 
 
 def main() -> int:
@@ -30,7 +33,7 @@ def main() -> int:
     )
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    cfg = ScrcpyConfig(ffmpeg_path="C:/ffmpeg/ffmpeg.exe")
+    cfg = ScrcpyConfig(ffmpeg_path=FFMPEG)
     src = ScrcpySource(cfg, runner=AdbScrcpyRunner(adb_exe=ADB))
     src.start()
     try:

@@ -8,13 +8,23 @@
 # Spawn-model caveat: the monobank clone's true P(4) is still TBD from live
 # research. Re-run once measured (see docs/rules-research.md).
 #
-# Usage (from project/):  ./.venv/Scripts/python.exe is the venv interpreter.
+# Usage (from anywhere; picks the venv interpreter, Windows or POSIX):
 #   bash scripts/bench.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-PY=./.venv/Scripts/python.exe
-BOT=./.venv/Scripts/bot2048
+# Pick the venv interpreter: Windows (Scripts/python.exe) or POSIX (bin/python).
+if [[ -x ".venv/Scripts/python.exe" ]]; then
+    PY=".venv/Scripts/python.exe"
+elif [[ -x ".venv/bin/python" ]]; then
+    PY=".venv/bin/python"
+else
+    echo "error: no venv found at .venv/ — create it first (see docs/experiments.md)" >&2
+    exit 1
+fi
+# `python -m bot2048.cli` rather than the `bot2048` entry point: in a worktree
+# the entry point is the main copy's editable install, the module is THIS one.
+BOT="$PY -m bot2048.cli"
 DB=data/bench.db
 SEED=1000
 

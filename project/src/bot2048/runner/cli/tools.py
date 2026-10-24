@@ -2,7 +2,8 @@
 
 One code path per tool for every host OS -- no ``*_win`` / ``*_mac`` fork; each
 resolver branches internally on env vars, filesystem layout and PATH. Only the
-bundled ``adb`` name needs the import-time ``sys.platform`` suffix switch.
+bundled ``adb`` / ``ffmpeg`` executable NAMES need the import-time
+``sys.platform`` suffix switch (``.exe`` on Windows).
 """
 
 from __future__ import annotations
@@ -16,11 +17,16 @@ from pathlib import Path
 from bot2048.runner.cli.common import log
 
 #: Repo-bundled binaries/artifacts (all gitignored), relative to project/.
-#: Only ``adb`` needs the OS-conditional suffix here; ffmpeg is resolved
-#: PATH-first (see :func:`_resolve_ffmpeg_exe`) and the scrcpy-server jar is
-#: resolved per-host by :func:`_resolve_scrcpy_server_jar`.
-_BUNDLED_ADB = Path("tools") / "platform-tools" / ("adb.exe" if sys.platform == "win32" else "adb")
-_BUNDLED_FFMPEG = Path("tools") / "ffmpeg" / "ffmpeg-master-latest-win64-gpl" / "bin" / "ffmpeg.exe"
+#: ``adb`` and ``ffmpeg`` carry the OS-conditional ``.exe`` suffix; ffmpeg is
+#: resolved PATH-first and only then searched for under ``tools/ffmpeg/`` (a
+#: release zip unpacks into a versioned subdir -- ``ffmpeg-master-latest-
+#: win64-gpl/bin/ffmpeg.exe`` on Windows, a different layout elsewhere -- so
+#: the search is recursive, see :func:`_resolve_ffmpeg_exe`); the scrcpy-server
+#: jar is resolved per-host by :func:`_resolve_scrcpy_server_jar`.
+_EXE_SUFFIX = ".exe" if sys.platform == "win32" else ""
+_BUNDLED_ADB = Path("tools") / "platform-tools" / f"adb{_EXE_SUFFIX}"
+_FFMPEG_NAME = f"ffmpeg{_EXE_SUFFIX}"
+_BUNDLED_FFMPEG_DIR = Path("tools") / "ffmpeg"
 
 #: Where the (device-side, arch-neutral) scrcpy-server jar is looked for on the
 #: host. The jar is pushed to the phone, so its *host* location differs only by
@@ -41,16 +47,24 @@ def _resolve_adb_exe() -> str:
 
 
 def _resolve_ffmpeg_exe() -> str:
-    """PATH ffmpeg if available, else the repo-bundled exe, else plain ``ffmpeg``.
+    """PATH ffmpeg if available, else a repo-bundled one, else plain ``ffmpeg``.
 
-    The last case lets :class:`~bot2048.device.scrcpy.ScrcpySource` surface
-    the spawn error itself -- the capture fallback then keeps the run alive
-    on screencap.
+    PATH first on every OS (Homebrew/apt/winget installs). The bundled search
+    is recursive under ``tools/ffmpeg/`` for the OS-specific executable name,
+    newest mtime first, so no release-zip layout is hardcoded. The last case
+    lets :class:`~bot2048.device.scrcpy.ScrcpySource` surface the spawn error
+    itself -- the capture fallback then keeps the run alive on screencap.
     """
     if shutil.which("ffmpeg"):
         return "ffmpeg"
-    if _BUNDLED_FFMPEG.exists():
-        return str(_BUNDLED_FFMPEG)
+    if _BUNDLED_FFMPEG_DIR.is_dir():
+        bundled = sorted(
+            (p for p in _BUNDLED_FFMPEG_DIR.rglob(_FFMPEG_NAME) if p.is_file()),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if bundled:
+            return str(bundled[0])
     return "ffmpeg"
 
 
