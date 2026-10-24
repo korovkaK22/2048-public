@@ -23,9 +23,12 @@
 | стоп процесу | `taskkill //PID //T //F` | `kill -TERM <pid>` → `exit_reason='killed'` (обробник SIGTERM/SIGHUP у `runner/lifecycle.py`) |
 | чексуми рішень | еталон amd64 | **інші**: arm64 Go фьюзить FMA (див. §12) |
 
-Конфіг прод-гри (**верифіковано з live-БД i7**): чемпіон **`w-l0.003.bin`** + record-engine,
-expectimax **фіксованої глибини 4** (без `--budget-ms`), `--prefetch`, `--capture apk`,
-`--auto-login` — це `config/strategies/champion-live.json`. Альтернативи:
+Конфіг прод-гри (**верифіковано з live-БД i7**; повне зведення — [`production-state.md`](production-state.md)):
+чемпіон **`w-l0.003.bin`** + record-engine, expectimax **фіксованої глибини 4** (без
+`--budget-ms`), `--prefetch`, `--capture apk`, `--auto-login` — це
+`config/strategies/champion-live.json`. Фіксована глибина = гра не залежить від заліза
+(той самий хід на M4 і на i7, з поправкою на FMA — §12); для Mac mini головні метрики —
+пропускна здатність спроб і аптайм, не сила пошуку. Альтернативи:
 `wall-record.json` (wall-мережа `champion-wall-snap-0316.bin`), `champion-l0003.json`
 (record off). `scripts/live.sh` виставляє саме champion-live через env (тимчасово, доки
 live-CLI не читає StrategySpec напряму).
@@ -217,11 +220,15 @@ Telegram працюють через `control/pause.flag` і `logs/` у `project
 рядки — фази `capture / perceive / detect / swipe / settle / search_ipc / search …`
 плюс `TOTAL` і `CRITICAL`, колонки `p50 / p90 / p95 / max` мс; рядок з позначкою
 `<== слабина` — фаза з найбільшим середнім внеском у критичний шлях. У підписі:
-`critical path: avg X ms of Y ms full (Z%); prefetch hit-rate: H%`.
+`critical path: avg X ms of Y ms full (Z%); prefetch hit-rate: H%`. Нижче — рядки
+`predict-gate: hit …%` і `loop gap, unaccounted (gap - critical)` / `prev_commit (persist
+section)` (p50/p95/p99/max): те, чого фазовий таймер не бачить між двома комітами ходу —
+хвіст рекордера/логів; саме його мав прибрати async-рекордер, порівнювати до/після.
 
 **Еталон Windows i7** (журнал `experiment-log.md`, 2026-07-11, 1731 хід, `--capture apk`):
 **344/375 мс/хід** (критичний шлях / повний хід), свайп ≈ 141 мс (80 жест + ~60 Android
-`input`-spawn), settle ≈ 156 мс, apk-gate 92 %, рушій ≈ 25 мс на критичному шляху.
+`input`-spawn), settle ≈ 156 мс, apk-gate 92 %, рушій ≈ 25 мс на критичному шляху. По всій
+прод-історії i7 (`production-state.md`): **середнє 342 мс, медіана 312 мс на хід.**
 На M4 чекаємо: `swipe`/`settle` ті самі (це телефон), `search`/`search_ipc` менші
 (лист мережі ~9× швидший), `capture` той самий (APK-пакети). Якщо `TOTAL p50` помітно
 вище 375 — дивитись `слабина`: `capture` → adb-транспорт (USB/WiFi), `swipe` → adb-latency,
