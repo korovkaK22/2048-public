@@ -1,4 +1,4 @@
-"""Never-crash outer-loop recovery for the live session (R6, docs/refactor-plan.md).
+"""Never-crash outer-loop recovery for the live session (R6, docs/archive/refactor-plan.md).
 
 The overnight-hardening policy that keeps a session alive: :class:`SessionRecovery`
 decides which failures are transient (:meth:`recoverable`) and, for those,

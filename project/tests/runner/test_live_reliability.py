@@ -1,6 +1,6 @@
 """Reliability telemetry: predict-gate, vision fallback, counts, capture kind.
 
-research/telemetry_review.md top-5 (M1-M4, N6). All additive: the per-move
+docs/research/telemetry_review.md top-5 (M1-M4, N6). All additive: the per-move
 signals ride in ``eval_details["move"]`` / ``["vision"]`` (free-form neighbors
 of the frozen ``timing`` bucket) and the per-game aggregates in the
 ``GAME_OVER`` / ``MOVE_ABORTED`` ops ``details_json``. Everything runs against

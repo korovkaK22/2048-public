@@ -71,7 +71,7 @@ def _board_stats(board: Board) -> _BoardStats:
     return _BoardStats(histogram=histogram, highest=highest, empty=empty, total=total)
 
 
-# -- per-move latency telemetry (research/latency_telemetry.md) -----------------
+# -- per-move latency telemetry (docs/research/latency_telemetry.md) -----------------
 #
 # Where the wall-clock of ONE move goes, phase by phase, written into the
 # free-form ``MovePlayed.eval_details["timing"]`` bucket at commit time -- the
@@ -156,7 +156,7 @@ class _MovePhaseTimer:
 def _device_capture_kind(device: object) -> str | None:
     """The FACTUAL frame source of the last ``screenshot()``: scrcpy/screencap.
 
-    ``research/telemetry_review.md`` M3: ``db latency`` used to read the
+    ``docs/research/telemetry_review.md`` M3: ``db latency`` used to read the
     CONFIGURED capture from ``experiments.params_json``, so a silent fallback
     from the scrcpy stream to ``screencap`` (~0.65 s/frame over WiFi) was
     invisible in p95. This reads the fact through the device's OPTIONAL public
@@ -180,7 +180,7 @@ def _device_capture_kind(device: object) -> str | None:
 
 
 class _MoveCounters:
-    """Per-move reliability counters (research/telemetry_review.md M1-M3).
+    """Per-move reliability counters (docs/research/telemetry_review.md M1-M3).
 
     Sealed into ``eval_details["move"]`` at commit time next to the phase
     ``timing`` bucket (the frozen recording contract stays untouched). Like
@@ -314,7 +314,7 @@ def _percentile(values: list[float], pct: float) -> float:
 
 @dataclass(slots=True)
 class _GameTelemetry:
-    """Per-game reliability accumulators (research/telemetry_review.md N6).
+    """Per-game reliability accumulators (docs/research/telemetry_review.md N6).
 
     Summed move-by-move in :meth:`LiveRunner._commit_move`, then folded into
     the ``GAME_OVER`` ops ``details_json`` by :meth:`LiveRunner._end_game` --

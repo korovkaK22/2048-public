@@ -1,4 +1,4 @@
-"""Auth-wall handling for the live loop (R5, docs/refactor-plan.md).
+"""Auth-wall handling for the live loop (R5, docs/archive/refactor-plan.md).
 
 The hardened auth surface of the live pipeline: :class:`AuthFlow` owns the
 opt-in auto-login policy for the AUTH_REQUIRED wall, both on the main play loop

@@ -1,4 +1,4 @@
-"""One-move execution for the live loop (R7, docs/refactor-plan.md).
+"""One-move execution for the live loop (R7, docs/archive/refactor-plan.md).
 
 The last and thinnest extraction from :class:`~bot2048.runner.live.LiveRunner`:
 :class:`SwipeController` owns the choose -> swipe -> verify -> commit path for
@@ -560,7 +560,7 @@ class SwipeController:
         timing = self._timer.snapshot()
         details: dict[str, Any] = dict(decision.details)
         details["timing"] = timing
-        # Reliability sidecars (research/telemetry_review.md M1-M3): capture/
+        # Reliability sidecars (docs/research/telemetry_review.md M1-M3): capture/
         # swipe counts + predict-gate outcome + FACTUAL capture_kind, and the
         # per-cell vision-fallback picture -- both free-form neighbors of the
         # frozen ``timing`` bucket, never inside it.
@@ -628,7 +628,7 @@ class SwipeController:
             self.heartbeat.update(game_id=state.game_id, ply=state.ply)
 
     def _vision_snapshot(self) -> dict[str, Any] | None:
-        """Per-move vision-fallback picture (research/telemetry_review.md M1).
+        """Per-move vision-fallback picture (docs/research/telemetry_review.md M1).
 
         Counts the cells the recognizer resolved WITHOUT a clean digit read
         (``CellLook.suspect`` -- color fallback / low confidence) on the

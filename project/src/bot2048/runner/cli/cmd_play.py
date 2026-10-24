@@ -158,7 +158,7 @@ def play(
             "pacing profile default (fast = 80 ms). Live A/B knob for swipe speed "
             "vs the move_rejected retry rate. Unset resolves to the live default "
             "of 45 ms (LIVE_SWIPE_DURATION_MS; game accepts >=~20 ms per "
-            "research/swipe_throughput.md) unless BOT2048_SWIPE_MS is set, "
+            "docs/research/swipe_throughput.md) unless BOT2048_SWIPE_MS is set, "
             "which takes precedence over the unset default.",
         ),
     ] = None,
@@ -338,7 +338,7 @@ def play(
     if swipe_duration is None and not os.environ.get(SWIPE_MS_ENV_VAR, "").strip():
         # Live default: 45 ms gestures instead of the pacing profile's 80 ms
         # fast tier. The game registers swipes down to ~20 ms
-        # (research/swipe_throughput.md), so 45 ms keeps >2x margin while
+        # (docs/research/swipe_throughput.md), so 45 ms keeps >2x margin while
         # cutting ~35 ms of gesture time per move. Explicit --swipe-duration
         # or BOT2048_SWIPE_MS always wins; the verify-and-retry path
         # (--swipe-retries / move_rejected) stays as the safety net and this

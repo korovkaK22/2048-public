@@ -1,4 +1,4 @@
-"""Perception gate for the live loop (R4, docs/refactor-plan.md).
+"""Perception gate for the live loop (R4, docs/archive/refactor-plan.md).
 
 The fail-closed heart of the live pipeline: every board the loop acts on comes
 from here. :class:`ObservationGate` owns capture, stable-frame settle, the
@@ -173,7 +173,7 @@ class ObservationGate:
         (:func:`diff_spawn` + :data:`_GATE_SPAWN_EXPONENTS`). A transient
         slide frame cannot satisfy the full-board equality (some cell always
         still differs), so a false early frame is simply skipped and the
-        next capture is polled (research/early_spawn_detection.md).
+        next capture is polled (docs/research/early_spawn_detection.md).
 
         Returns the accepted board, or ``None`` once
         :attr:`LiveConfig.predict_gate_max_wait_s` is exhausted so the

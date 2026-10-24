@@ -90,7 +90,7 @@ def test_env_var_suppresses_live_default(
 
 
 def test_live_default_keeps_margin_over_game_floor() -> None:
-    # research/swipe_throughput.md: the game registers gestures down to
+    # docs/research/swipe_throughput.md: the game registers gestures down to
     # ~20 ms; the live default must keep a comfortable margin above that
     # while staying well under the 80 ms fast profile.
     assert LIVE_SWIPE_DURATION_MS == 45

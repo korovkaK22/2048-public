@@ -22,7 +22,7 @@ from bot2048.device.humanizer import FAST_SWIPE_DURATION_MS
 from bot2048.device.ui_map import Point
 
 #: Post-swipe pause before the first verification capture. The slide/merge
-#: animation is ~115 ms (research/early_spawn_detection.md), so 0.13 s is a
+#: animation is ~115 ms (docs/research/early_spawn_detection.md), so 0.13 s is a
 #: small buffer over it: the predict-gate below tolerates early frames anyway,
 #: and the legacy settle fallback stabilizes frames on its own.
 SETTLE_DELAY_DEFAULT_S: float = 0.13
@@ -39,7 +39,7 @@ SETTLE_DELAY_DEFAULT_S: float = 0.13
 SETTLE_DELAY_APK_S: float = 0.05
 
 #: Default swipe gesture duration (ms) for LIVE play. The game registers
-#: gestures down to ~20 ms (research/swipe_throughput.md), so 45 ms keeps a
+#: gestures down to ~20 ms (docs/research/swipe_throughput.md), so 45 ms keeps a
 #: >2x safety margin over that floor while trimming ~35 ms/move vs the
 #: humanizer fast profile's 80 ms. cli.py resolves this when neither
 #: ``--swipe-duration`` nor ``BOT2048_SWIPE_MS`` is given; both still win.
@@ -48,7 +48,7 @@ SETTLE_DELAY_APK_S: float = 0.05
 LIVE_SWIPE_DURATION_MS: int = 45
 
 #: Exponents the app can legally spawn (a 2 or a 4 -- measured in
-#: research/early_spawn_detection.md). The predict-gate only accepts a new
+#: docs/research/early_spawn_detection.md). The predict-gate only accepts a new
 #: tile with one of these values, so a foreign tile sliding OVER an empty
 #: cell mid-animation can never be mistaken for the spawn.
 _GATE_SPAWN_EXPONENTS: frozenset[int] = frozenset({1, 2})
@@ -59,7 +59,7 @@ _GATE_SPAWN_EXPONENTS: frozenset[int] = frozenset({1, 2})
 #: once): it keeps the lull-retry loop from hot-spinning the CPU while it waits
 #: out the gate budget. Small enough to still catch a just-late spawn packet.
 #:
-#: Latency-scout item #2 (docs/latency-scout-device-pipeline.md): a settled
+#: Latency-scout item #2 (docs/research/latency-scout-device-pipeline.md): a settled
 #: spawn packet that lands just after an empty poll dwells in the 1-slot
 #: newest-wins mailbox up to one quantum before the next poll consumes it -- at
 #: 0.02 s that was ~20 ms worst case (~10 ms avg) of pure added perceive

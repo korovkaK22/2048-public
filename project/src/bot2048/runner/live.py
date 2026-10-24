@@ -30,7 +30,7 @@ Per iteration (docs/architecture.md, docs/ops-monitoring.md):
     engine predicts the after-move board.
 6.  Humanized swipe, then VERIFY: the parsed board must equal the
     prediction plus exactly one new tile (:func:`diff_spawn`).
-    Verification is two-tier (research/early_spawn_detection.md):
+    Verification is two-tier (docs/research/early_spawn_detection.md):
 
     * **predict-gate** (:meth:`LiveRunner._predict_gate`, on by default via
       :attr:`LiveConfig.predict_gate`): the deterministic engine knows the
@@ -424,11 +424,11 @@ class LiveRunner:
         self.pause_flag = Path(pause_flag)
         self._sleep = sleep
         self._clock = clock
-        # Per-move latency telemetry (research/latency_telemetry.md): capture
+        # Per-move latency telemetry (docs/research/latency_telemetry.md): capture
         # and detect_state are billed through thin delegates so probe_screen
         # stays untouched; perceive/swipe/settle are billed at the call sites.
         self._timer = _MovePhaseTimer(clock)
-        # Per-move reliability counters (research/telemetry_review.md M1-M3):
+        # Per-move reliability counters (docs/research/telemetry_review.md M1-M3):
         # capture/swipe tallies, predict-gate outcome and the FACTUAL frame
         # source, sealed into eval_details["move"] beside the phase timing.
         self._counters = _MoveCounters()
@@ -1031,7 +1031,7 @@ class LiveRunner:
                 # playing fine, and log the cause on the way out (docs §5/§6).
                 # The aborted move never reaches ``moves``, so its phase timing
                 # + reliability counters (still intact -- reset only on the next
-                # move) are emitted here instead (research/telemetry_review.md
+                # move) are emitted here instead (docs/research/telemetry_review.md
                 # M4): the "slow-but-failed" move is the most valuable to debug.
                 timing = self._timer.snapshot()
                 move_counts = self._counters.snapshot()
@@ -1121,7 +1121,7 @@ class LiveRunner:
         # Game-level telemetry rides in the ops ``live_events.details_json`` field
         # -- the game-level analog of the per-move ``eval_details["timing"]``
         # bucket -- so the frozen recording/storage contracts stay untouched.
-        # Game-level reliability aggregates (research/telemetry_review.md N6)
+        # Game-level reliability aggregates (docs/research/telemetry_review.md N6)
         # ride alongside the tile stats so a whole campaign is comparable with
         # one SELECT over live_events -- no reconstruction from ``moves``.
         game_details: dict[str, Any] = {
