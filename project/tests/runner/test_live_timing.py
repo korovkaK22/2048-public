@@ -27,6 +27,9 @@ TIMING_KEYS = frozenset(
     {"capture_ms", "perceive_ms", "detect_ms", "swipe_ms", "settle_ms", "total_ms"}
 )
 
+#: Two mergeable tiles + plenty of room: supports several verified moves.
+OPEN_BOARD: Board = (1, 1) + (0,) * 14
+
 
 class DetailedStrategy(ScriptedStrategy):
     """Scripted moves whose Decision carries pre-existing engine telemetry."""
@@ -122,3 +125,59 @@ class TestMoveTiming:
             phase_sum = sum(v for k, v in timing.items() if k != "total_ms")
             assert timing["total_ms"] == pytest.approx(phase_sum)
             assert timing["total_ms"] < 100_000.0
+
+
+class TestLoopGapProbes:
+    """``eval_details["move"]["t_commit"]`` / ``["prev_commit_ms"]`` (design §5.1).
+
+    Both are additive neighbours of the frozen ``timing`` bucket: the stamp
+    is monotonic and strictly increasing within a game; the persist cost of
+    move n rides on move n+1 and is absent on ply 0.
+    """
+
+    def test_t_commit_monotonic_and_prev_commit_shifted_by_one(
+        self, tmp_path: Path
+    ) -> None:
+        phone = FakePhone(board=OPEN_BOARD)
+        h = make_harness(
+            tmp_path,
+            phone,
+            strategy=ScriptedStrategy([Direction.RIGHT, Direction.LEFT, Direction.RIGHT]),
+            config=LiveConfig(experiment_id="t", max_games=1, max_moves_per_game=3),
+        )
+        h.runner.run()
+        moves = _moves(h)
+        assert len(moves) == 3
+
+        stamps = [m.eval_details["move"]["t_commit"] for m in moves]
+        assert all(isinstance(t, float) for t in stamps)
+        assert stamps == sorted(stamps) and len(set(stamps)) == 3
+
+        # ply 0: no previous move in THIS game -> key absent, never fabricated
+        assert "prev_commit_ms" not in moves[0].eval_details["move"]
+        for move in moves[1:]:
+            prev = move.eval_details["move"]["prev_commit_ms"]
+            assert isinstance(prev, float)
+            assert 0.0 <= prev < 10_000.0
+
+        # the frozen timing bucket is untouched by the new neighbours
+        for move in moves:
+            assert set(move.eval_details["timing"]) == TIMING_KEYS
+
+    def test_prev_commit_not_carried_across_games(self, tmp_path: Path) -> None:
+        phone = FakePhone(
+            board=NEARLY_DEAD_BOARD,
+            spawn_script=deque([Spawn(cell=0, exponent=1), Spawn(cell=7, exponent=2)]),
+        )
+        h = make_harness(
+            tmp_path,
+            phone,
+            strategy=ScriptedStrategy([Direction.RIGHT, Direction.LEFT]),
+            config=LiveConfig(experiment_id="t", max_games=2, max_moves_per_game=1),
+        )
+        h.runner.run()
+        moves = _moves(h)
+        assert len(moves) == 2
+        assert [m.ply for m in moves] == [0, 0]
+        # the second game's first move must NOT inherit game 1's persist cost
+        assert all("prev_commit_ms" not in m.eval_details["move"] for m in moves)

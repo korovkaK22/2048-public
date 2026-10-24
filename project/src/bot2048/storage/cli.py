@@ -261,6 +261,20 @@ def _print_latency(report: ExperimentLatency) -> None:
             f"({report.apk_moves} moves)"
         )
 
+    # Loop gap (design-strategy-logging §5.1): what the phase timer never bills
+    # between two commits -- the recorder/log tail, the vision snapshot, loop
+    # overhead. The before/after yardstick for the async recorder; silent for
+    # experiments recorded before the ``t_commit`` stamp existed.
+    for label, gap in (
+        ("unaccounted (gap - critical)", report.unaccounted),
+        ("prev_commit (persist section)", report.prev_commit),
+    ):
+        if gap is not None:
+            console.print(
+                f"  loop gap, {label}: p50 {gap.p50:.1f} / p95 {gap.p95:.1f} / "
+                f"p99 {gap.p99:.1f} / max {gap.max_ms:.1f} ms (n={gap.n})"
+            )
+
     top = report.contributions[0]
     runner_up = report.contributions[1] if len(report.contributions) > 1 else None
     verdict = (
