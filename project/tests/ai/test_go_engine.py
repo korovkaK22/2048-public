@@ -111,7 +111,18 @@ def test_try_lookup_parses_hit_and_miss(monkeypatch: pytest.MonkeyPatch) -> None
     strat = object.__new__(GoExpectimaxStrategy)
 
     monkeypatch.setattr(strat, "_request", lambda _cmd: "hit 2 12.5 4")
-    assert strat._try_lookup("0" * 16) == (Direction(2), 12.5, 4)
+    assert strat._try_lookup("0" * 16) == (Direction(2), 12.5, 4, {})
+
+    # Protocol 2 appends the stop tail to a hit computed by a tailed prefetch.
+    monkeypatch.setattr(
+        strat, "_request", lambda _cmd: "hit 2 12.5 4 stop=depth nodes=77 cprob=0.0001"
+    )
+    assert strat._try_lookup("0" * 16) == (
+        Direction(2),
+        12.5,
+        4,
+        {"stop": "depth", "nodes": "77", "cprob": "0.0001"},
+    )
 
     monkeypatch.setattr(strat, "_request", lambda _cmd: "miss")
     assert strat._try_lookup("0" * 16) is None

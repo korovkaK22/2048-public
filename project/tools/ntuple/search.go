@@ -51,6 +51,23 @@ const (
 
 var cprobThresh = 0.0001
 
+// nodeBudget is the per-request node cap (protocol 2 `nodes=N`): a hardware-
+// independent abort source shared by every searcher of one request (the serial
+// searcher, or all workers of a parallel rung). It is charged at the abort poll
+// (every abortCheckMask+1 interior chance nodes), so in the serial search
+// whether a rung trips the cap is a pure function of the position — which is
+// what makes the both-limits-None "unbounded" mode reproducible.
+type nodeBudget struct {
+	used atomic.Uint64
+	cap  uint64
+}
+
+// spend charges n nodes and reports whether the cap is now exceeded.
+func (nb *nodeBudget) spend(n uint64) bool { return nb.used.Add(n) > nb.cap }
+
+// exceeded reports whether the cap has been crossed (by any searcher).
+func (nb *nodeBudget) exceeded() bool { return nb.used.Load() > nb.cap }
+
 type ttEntry struct {
 	key       uint64
 	val       float64
@@ -140,7 +157,11 @@ type searcher struct {
 	hasDeadline bool
 	deadline    time.Time
 	abort       *atomic.Bool
-	stopped     bool
+	// nodeCap, when non-nil, is the request's node budget (protocol 2
+	// `nodes=`), charged at the same poll as the deadline; crossing it aborts
+	// the rung exactly like the deadline does.
+	nodeCap *nodeBudget
+	stopped bool
 	// nodes counts interior chance nodes; it doubles as the abort-poll clock.
 	nodes uint64
 	// lastAchievedRung is the index into budgetLadder that the previous budget
@@ -148,6 +169,12 @@ type searcher struct {
 	// (positions evolve slowly, so the affordable rung rarely moves by more
 	// than one per move).
 	lastAchievedRung int
+	// ladderFirst is the direct-first mitigation of the capped search
+	// (limitedSearch, serve.go): set when the previous move's direct
+	// fixed-depth attempt failed or ate most of the budget, so this move climbs
+	// the capped ladder first and tries the direct search only with what is
+	// left.
+	ladderFirst bool
 	// farm switches the max node to the PRODUCTION objective (engine2048/
 	// search.go): maximise the expected board S-sum at the stopping moment, with
 	// a 2048 or a jam cashing out at the pre-move S-sum. The two objectives must
@@ -184,12 +211,14 @@ func (s *searcher) chanceNode(board uint64, cprob float64, curdepth int32) float
 	}
 	// One increment per interior chance node: the abort-poll clock.
 	s.nodes++
-	if s.hasDeadline {
+	if s.hasDeadline || s.nodeCap != nil {
 		if s.stopped {
 			return 0
 		}
 		if s.nodes&abortCheckMask == 0 {
-			if s.abort.Load() || !time.Now().Before(s.deadline) {
+			if s.abort.Load() ||
+				(s.hasDeadline && !time.Now().Before(s.deadline)) ||
+				(s.nodeCap != nil && s.nodeCap.spend(abortCheckMask+1)) {
 				s.abort.Store(true)
 				s.stopped = true
 				return 0
@@ -336,12 +365,26 @@ func (s *searcher) bestMove(board uint64) (int, float64) {
 // garbage by design — the caller keeps the previous rung's answer instead.
 // The searcher is disarmed on return, so fixed-depth callers never poll.
 func (s *searcher) rootSearchDeadline(board uint64, deadline time.Time) (dir int, val float64, completed bool) {
-	s.hasDeadline, s.deadline = true, deadline
+	return s.rootSearchLimited(board, deadline, true, nil)
+}
+
+// rootSearchLimited is rootSearchDeadline with both abort sources explicit: an
+// optional deadline and an optional node cap (protocol 2). Polling never changes
+// a value, so a limited search that COMPLETES is bit-identical to the plain
+// rootSearch on the same table state — the property the capped live search
+// (limitedSearch) is built on. The searcher is disarmed on return.
+func (s *searcher) rootSearchLimited(board uint64, deadline time.Time, hasDeadline bool, nb *nodeBudget) (dir int, val float64, completed bool) {
+	s.hasDeadline, s.deadline, s.nodeCap = hasDeadline, deadline, nb
 	s.abort = new(atomic.Bool)
 	s.stopped = false
 	dir, val = s.rootSearch(board)
 	aborted := s.abort.Load()
-	s.hasDeadline, s.abort, s.stopped = false, nil, false
+	s.hasDeadline, s.nodeCap, s.abort, s.stopped = false, nil, nil, false
+	if !aborted && nb != nil && nb.exceeded() {
+		// Crossed the cap inside the last poll window: the values are complete,
+		// but "completed within the cap" must be a pure function of the position.
+		aborted = true
+	}
 	return dir, val, !aborted
 }
 

@@ -74,6 +74,31 @@ BOT2048_SEARCH_WORKERS=4    # macOS: = performance cores (sysctl -n hw.perflevel
 - **Leaf-value cache is ON by default** (64 MB, bit-exact, never invalidates).
   Kill switch: `BOT2048_LEAF_CACHE=0`.
 
+## Wire protocol 2 (search limits) — both engines
+
+`version` reports `protocol=2 engine=ntuple` (engine2048: `engine=engine2048`). The
+protocol-1 wire is a byte-identical subset; the client (`go_engine.py`) picks the
+shape from the `version` handshake it does once per spawn.
+
+```
+search   <hex> <depth> <p4> <adaptive> <mode> <budget_ms> [maxdepth=D|0] [nodes=N|0] [cprob=C]
+prefetch <hex> <depth> <p4> <adaptive> <mode> <budget_ms> [maxdepth=…] [nodes=…] [cprob=…]
+  -> <dir> <value> <ms> <depth_reached> stop=<reason> nodes=<N> cprob=<C>
+lookup <hex> -> hit <dir> <value> <depth> [stop=… nodes=… cprob=…] | miss
+```
+
+Any `k=v` tail selects `limitedSearch` (serve.go): `maxdepth` and `budget_ms` are
+two INDEPENDENT optional limits (0 = none), the search stops at whichever hits
+first; `nodes` is the hardware-independent guard (0 = none); `cprob` pins the base
+horizon. `maxdepth=D budget_ms=0` is the fixed-depth path; `maxdepth=D` with a
+budget is **direct-first**: the fixed-depth-D answer when it fits (`stop=depth`,
+bit-identical to fixed depth D on any machine), else the ladder capped at D
+(`stop=budget|nodes|ladder_end`). Both 0 = the whole ladder with `nodes` as the only
+stop (serial: reproducible). The reply tail appears only on tailed requests; a tail
+without `maxdepth=` keeps the positional-depth rule (cap when budget 0, none
+otherwise). `stop=record` = the record-engine banker decided (record.go). Tests:
+`limits_test.go` in both tool dirs (farm leaf here, so no weights needed).
+
 ## Repeatable perf bench + bit-identity harness
 
 ```sh

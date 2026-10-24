@@ -64,6 +64,23 @@ const (
 	budgetMaxRatio     = 10.0
 )
 
+// nodeBudget is the per-request node cap (protocol 2 `nodes=N`): a hardware-
+// independent abort source shared by every goroutine of one search. Each
+// goroutine charges it at its abort poll (every abortCheckMask+1 interior
+// chance nodes), so the accounting is at poll granularity, and in the serial
+// search whether a given rung trips the cap is a pure function of the position
+// — which is what makes the both-limits-None "unbounded" mode reproducible.
+type nodeBudget struct {
+	used atomic.Uint64
+	cap  uint64
+}
+
+// spend charges n nodes and reports whether the cap is now exceeded.
+func (nb *nodeBudget) spend(n uint64) bool { return nb.used.Add(n) > nb.cap }
+
+// exceeded reports whether the cap has been crossed (by any goroutine).
+func (nb *nodeBudget) exceeded() bool { return nb.used.Load() > nb.cap }
+
 // ttEntry is one transposition-table slot. `remaining` is the search depth
 // still ahead of the node when the value was computed (depthLimit -
 // curdepth); a stored value is valid for any lookup that needs at most
@@ -148,6 +165,16 @@ type searchTables struct {
 	// (positions evolve slowly, so the affordable rung rarely moves by more than
 	// one per move).
 	lastAchievedRung int
+	// ladderFirst is the direct-first mitigation of the capped search
+	// (searchLimitedExt): when the previous move's direct fixed-depth attempt
+	// failed or ate more than 70 % of the budget, the next move climbs the capped
+	// ladder first and only tries the direct search with what is left. Positions
+	// evolve slowly, so last move's affordability predicts this move's.
+	ladderFirst bool
+	// lastIterNodes is the interior-chance-node count of the most recent
+	// iteration on these tables (sum over its goroutines). Written by the driver
+	// goroutine after the join; the request handlers report it as `nodes=`.
+	lastIterNodes uint64
 
 	// Load-balance telemetry of the last parallel iteration (see the end of
 	// runRootIterationPar). Written by the driver goroutine after its join, read
@@ -235,7 +262,11 @@ type searchState struct {
 	// (prefetch) searches the moment a real request arrives. It is supplied by
 	// the CALLER (runRootIteration's ext argument), so only a search that was
 	// started as speculative can ever be aborted by speculation's flag.
-	ext     *atomic.Bool
+	ext *atomic.Bool
+	// nodeCap, when non-nil, is the request's node budget (protocol 2 `nodes=`),
+	// charged at the same poll as the deadline; crossing it aborts the iteration
+	// exactly like the deadline does.
+	nodeCap *nodeBudget
 	stopped bool
 	nodes   uint64
 }
@@ -270,14 +301,15 @@ func (s *searchState) scoreTilechooseNode(board uint64, cprob float64, curdepth 
 	// and as the work counter the parallel driver reports (nodes, not wall time,
 	// is the load-independent way to compare the work two search shapes do).
 	s.nodes++
-	if s.hasDeadline || s.ext != nil {
+	if s.hasDeadline || s.ext != nil || s.nodeCap != nil {
 		if s.stopped {
 			return 0
 		}
 		if s.nodes&abortCheckMask == 0 {
 			if s.abort.Load() ||
 				(s.hasDeadline && !time.Now().Before(s.deadline)) ||
-				(s.ext != nil && s.ext.Load()) {
+				(s.ext != nil && s.ext.Load()) ||
+				(s.nodeCap != nil && s.nodeCap.spend(abortCheckMask+1)) {
 				s.abort.Store(true)
 				s.stopped = true
 				return 0
@@ -389,6 +421,40 @@ type searchResult struct {
 	bestDir    int // Direction int of the best move, -1 if no legal move
 	bestValue  float64
 	depthLimit int
+	// Protocol-2 telemetry (reported only on requests that carried the k=v
+	// tail; the old 4-field wire ignores them). stop is WHY the search ended:
+	// "depth" (the fixed-depth search completed — bit-identical to a plain
+	// fixed-depth request), "budget" (deadline), "nodes" (node cap),
+	// "ladder_end" (no deeper rung to climb). nodes is the interior chance nodes
+	// visited over the whole request; cprob the horizon of the returned answer.
+	stop  string
+	nodes uint64
+	cprob float64
+}
+
+// stop reasons (see searchResult.stop).
+const (
+	stopDepth     = "depth"
+	stopBudget    = "budget"
+	stopNodes     = "nodes"
+	stopLadderEnd = "ladder_end"
+)
+
+// searchLimits are the protocol-2 search limits of one request (search.go
+// `searchLimitedExt`): two INDEPENDENT optional stop conditions plus a guard.
+// Zero means "none" everywhere (cprob 0 = the compiled-in cprobThreshBase).
+type searchLimits struct {
+	maxDepth int     // depth ceiling; 0 = none
+	budgetMs float64 // wall-clock ceiling; 0 = none
+	maxNodes uint64  // node cap, hardware-independent; 0 = none
+	cprob    float64 // base probability horizon; 0 = cprobThreshBase
+}
+
+func (l searchLimits) baseCprob() float64 {
+	if l.cprob > 0 {
+		return l.cprob
+	}
+	return cprobThreshBase
 }
 
 // iterCfg is everything one fixed-(depth, cprob) iteration needs. It is passed
@@ -407,6 +473,7 @@ type iterCfg struct {
 	deadline    time.Time
 	hasDeadline bool
 	ext         *atomic.Bool
+	nodeCap     *nodeBudget
 
 	// workers > 1 selects the parallel frontier driver (parallel.go). Only the
 	// time-budgeted (live) search ever sets it; the fixed-depth path that
@@ -429,6 +496,7 @@ func (cfg iterCfg) newState(tt *ttTable, stt *sharedTT, abort *atomic.Bool) *sea
 		deadline:    cfg.deadline,
 		abort:       abort,
 		ext:         cfg.ext,
+		nodeCap:     cfg.nodeCap,
 	}
 }
 
@@ -444,6 +512,7 @@ func runRootIteration(board uint64, cfg iterCfg, tabs *searchTables) (values [4]
 	abort := new(atomic.Bool)
 	moves := executeAllMoves(board)
 	var wg sync.WaitGroup
+	var nodes atomic.Uint64
 	for dir := 0; dir < 4; dir++ {
 		newboard := moves[dir]
 		if newboard == board {
@@ -463,9 +532,11 @@ func runRootIteration(board uint64, cfg iterCfg, tabs *searchTables) (values [4]
 			state := cfg.newState(tt, nil, abort)
 			values[dir] = state.scoreTilechooseNode(nb, 1.0, 0)
 			searchNodesCounted.Add(state.nodes)
+			nodes.Add(state.nodes)
 		}(dir, newboard, tt)
 	}
 	wg.Wait()
+	tabs.lastIterNodes = nodes.Load()
 	return values, legal, !abort.Load()
 }
 
@@ -543,6 +614,31 @@ func searchExt(
 	tabs *searchTables,
 	ext *atomic.Bool,
 ) (searchResult, bool) {
+	return searchFixedExt(board, depth, p4, adaptive, eval, farm, cprobThreshBase, tabs, ext, time.Time{}, false, nil)
+}
+
+// searchFixedExt is the one fixed-depth iteration every fixed-depth caller runs,
+// with its abort sources explicit: ext (speculation), an optional deadline and
+// an optional node cap. With none armed (searchExt) there is no polling at all
+// and the iteration always completes; with a deadline or node cap armed,
+// completed=false means the limit fired and the values are garbage. Polling
+// never changes a value, so a limited search that COMPLETES is bit-identical to
+// the unlimited one — the property the capped live search (searchLimitedExt)
+// is built on.
+func searchFixedExt(
+	board uint64,
+	depth int,
+	p4 float64,
+	adaptive bool,
+	eval Evaluator,
+	farm bool,
+	cprob float64,
+	tabs *searchTables,
+	ext *atomic.Bool,
+	deadline time.Time,
+	hasDeadline bool,
+	nb *nodeBudget,
+) (searchResult, bool) {
 	depthLimit := depth
 	if adaptive {
 		if d := countDistinctTiles(board) - 2; d > depthLimit {
@@ -556,25 +652,38 @@ func searchExt(
 	tabs.beginSearch(1)
 	// workers: 1 — the fixed-depth search is the SIMULATION path and stays on the
 	// serial root split, whatever BOT2048_SEARCH_WORKERS says. Only searchBudget
-	// (live) fans out. cprobThresh: the compiled-in default, so a fixed-depth
-	// result is a pure function of (board, depth, p4, adaptive, eval, farm) —
-	// which is what makes a seeded simulation reproducible.
+	// (live) fans out. cprobThresh: the compiled-in default unless the request
+	// pinned one, so a fixed-depth result is a pure function of (board, depth,
+	// p4, adaptive, eval, farm, cprob) — which is what makes a seeded simulation
+	// reproducible.
 	cfg := iterCfg{
 		depthLimit:  int32(depthLimit),
-		cprobThresh: cprobThreshBase,
+		cprobThresh: cprob,
 		p4:          p4,
 		eval:        eval,
 		evalKind:    evalKind,
 		farm:        farm,
+		deadline:    deadline,
+		hasDeadline: hasDeadline,
 		ext:         ext,
+		nodeCap:     nb,
 		workers:     1,
 	}
 	values, legal, completed := runIteration(board, cfg, tabs)
 	if !completed {
 		return searchResult{}, false
 	}
+	if nb != nil && nb.exceeded() {
+		// Crossed the cap inside the last poll window of some goroutine: the
+		// values are complete, but "completed within the cap" must be a pure
+		// function of the position, not of which goroutine polled last.
+		return searchResult{}, false
+	}
 	bestDir, bestValue := pickBest(values, legal)
-	return searchResult{bestDir: bestDir, bestValue: bestValue, depthLimit: depthLimit}, true
+	return searchResult{
+		bestDir: bestDir, bestValue: bestValue, depthLimit: depthLimit,
+		stop: stopDepth, nodes: tabs.lastIterNodes, cprob: cprob,
+	}, true
 }
 
 // ---------------------------------------------------------------------------
@@ -642,7 +751,50 @@ func searchBudgetExt(
 ) (searchResult, bool) {
 	start := time.Now()
 	budget := time.Duration(budgetMs * float64(time.Millisecond))
-	deadline := start.Add(budget)
+	res, _, ok := ladderExt(board, p4, eval, farm, ladderLimits{
+		start: start, budget: budget, deadline: start.Add(budget), hasDeadline: true,
+		cprob: cprobThreshBase,
+	}, tabs, ext)
+	return res, ok
+}
+
+// ladderLimits is what bounds one climb of the ladder (ladderExt). With
+// hasDeadline=false and nb=nil the climb runs to the top of the (capped)
+// ladder — the "unbounded" mode, which only a node cap makes safe.
+type ladderLimits struct {
+	start       time.Time
+	budget      time.Duration
+	deadline    time.Time
+	hasDeadline bool
+	maxDepth    int         // rungs deeper than this are skipped; 0 = none
+	cprob       float64     // base horizon: a rung is never COARSER than this
+	nb          *nodeBudget // node cap shared with the rest of the request; nil = none
+}
+
+// ladderStats is the per-climb telemetry the capped search's direct-first
+// mitigation reads back (see searchLimitedExt).
+type ladderStats struct {
+	topRungTime time.Duration // wall time of the deepest COMPLETED rung (0 = insurance only)
+}
+
+// ladderExt is the generalised ladder behind searchBudgetExt: the same
+// insurance-then-climb with the same predictor and the same gamble, plus the
+// protocol-2 limits — a depth ceiling (rungs above it are never run), an
+// OPTIONAL deadline, a node cap shared with the caller, and a base horizon the
+// rungs may widen but never coarsen. With the ladderLimits searchBudgetExt
+// passes (deadline only, base = cprobThreshBase) every branch below is exactly
+// the pre-protocol-2 budget search. The returned stop says why the climb ended.
+func ladderExt(
+	board uint64,
+	p4 float64,
+	eval Evaluator,
+	farm bool,
+	lim ladderLimits,
+	tabs *searchTables,
+	ext *atomic.Bool,
+) (searchResult, ladderStats, bool) {
+	start, budget, deadline := lim.start, lim.budget, lim.deadline
+	nb := lim.nb
 	if farm {
 		eval = farmEvaluator{}
 	}
@@ -661,24 +813,39 @@ func searchBudgetExt(
 		ext:      ext,
 		workers:  workers,
 	}
-	runRung := func(r ladderRung, dl time.Time, hasDL bool) ([4]float64, [4]bool, bool) {
+	var totalNodes uint64
+	runRung := func(r ladderRung, dl time.Time, hasDL bool, cap *nodeBudget) ([4]float64, [4]bool, bool) {
 		cfg := base
 		cfg.depthLimit = int32(r.depth)
 		cfg.cprobThresh = r.cprob
 		cfg.deadline = dl
 		cfg.hasDeadline = hasDL
-		return runIteration(board, cfg, tabs)
+		cfg.nodeCap = cap
+		v, l, c := runIteration(board, cfg, tabs)
+		totalNodes += tabs.lastIterNodes
+		return v, l, c
+	}
+	// rungCprob: the ladder widens the horizon only past depth 8; a request that
+	// pinned a finer base keeps it on every rung (never coarser than the base).
+	rungCprob := func(r ladderRung) float64 {
+		if lim.cprob < r.cprob {
+			return lim.cprob
+		}
+		return r.cprob
 	}
 
-	// Insurance pass: microseconds, no deadline, so it always completes unless
-	// ext fires — and there is no shallower result to fall back on, so that case
-	// is reported as a failed search rather than papered over.
-	values, legal, insured := runRung(ladderRung{budgetInsuranceDepth, cprobThreshBase}, time.Time{}, false)
+	// Insurance pass: microseconds, no deadline and no node cap, so it always
+	// completes unless ext fires — and there is no shallower result to fall back
+	// on, so that case is reported as a failed search rather than papered over.
+	values, legal, insured := runRung(ladderRung{budgetInsuranceDepth, lim.cprob}, time.Time{}, false, nil)
 	if !insured {
-		return searchResult{}, false
+		return searchResult{}, ladderStats{}, false
 	}
 	achieved := budgetInsuranceDepth
 	achievedRung := -1
+	achievedCprob := lim.cprob
+	stop := stopLadderEnd
+	var stats ladderStats
 
 	// Start one rung below the previous move's achieved rung: positions evolve
 	// slowly, so the affordable rung rarely moves by more than one, and walking
@@ -694,6 +861,10 @@ func searchBudgetExt(
 	gambling := i > 0 // the starting rung is a GUESS, and it can be wrong
 	for ; i < len(budgetLadder); i++ {
 		r := budgetLadder[i]
+		if lim.maxDepth > 0 && r.depth > lim.maxDepth {
+			break // the ladder is capped: nothing deeper is ever run
+		}
+		r.cprob = rungCprob(r)
 		// A transposition entry is keyed by (board, remaining depth), but the value
 		// stored there was computed under the cprob of ITS rung. Reusing a coarse
 		// value in a finer-horizon pass would silently undo the widening — the
@@ -707,15 +878,22 @@ func searchBudgetExt(
 		// us returning the depth-2 insurance move. Cap the guess at half the
 		// budget; the other half is enough to walk up from the bottom.
 		dl := deadline
-		if gambling {
+		if gambling && lim.hasDeadline {
 			if half := start.Add(budget / 2); half.Before(dl) {
 				dl = half
 			}
 		}
 		iterStart := time.Now()
-		v, l, completed := runRung(r, dl, true)
+		v, l, completed := runRung(r, dl, lim.hasDeadline, nb)
 		iterTime := time.Since(iterStart)
+		if completed && nb != nil && nb.exceeded() {
+			completed = false // crossed the cap in the last poll window: discard (deterministic)
+		}
 		if !completed {
+			if nb != nil && nb.exceeded() {
+				stop = stopNodes
+				break // the cap is spent: climbing from the bottom would abort at once
+			}
 			if gambling {
 				// The guess was too rich. Fall back to the bottom of the ladder and
 				// climb honestly on the remaining budget.
@@ -725,11 +903,13 @@ func searchBudgetExt(
 				i = -1 // the loop's i++ makes this 0
 				continue
 			}
+			stop = stopBudget
 			break // deadline hit mid-rung: keep the last complete answer
 		}
 		gambling = false
 		values, legal = v, l
-		achieved, achievedRung = r.depth, i
+		achieved, achievedRung, achievedCprob = r.depth, i, r.cprob
+		stats.topRungTime = iterTime
 		prevCprob = r.cprob
 
 		// Predict the next rung from the growth we just measured (clamped), and
@@ -746,7 +926,8 @@ func searchBudgetExt(
 			}
 		}
 		prevIterTime, prevRung = iterTime, i
-		if time.Since(start)+time.Duration(ratio*float64(iterTime)) > budget {
+		if lim.hasDeadline && time.Since(start)+time.Duration(ratio*float64(iterTime)) > budget {
+			stop = stopBudget
 			break
 		}
 	}
@@ -758,7 +939,132 @@ func searchBudgetExt(
 	}
 
 	bestDir, bestValue := pickBest(values, legal)
-	return searchResult{bestDir: bestDir, bestValue: bestValue, depthLimit: achieved}, true
+	return searchResult{
+		bestDir: bestDir, bestValue: bestValue, depthLimit: achieved,
+		stop: stop, nodes: totalNodes, cprob: achievedCprob,
+	}, stats, true
+}
+
+// directFirstBudgetFrac: a direct attempt that ate more than this share of the
+// budget (or failed outright) switches the NEXT move to ladder-first.
+const directFirstBudgetFrac = 0.7
+
+// searchLimitedExt is the protocol-2 search: two independent, individually
+// optional limits (maxDepth D, budgetMs B) — the search stops at whichever hits
+// first — plus the maxNodes guard. Semantics by row:
+//
+//	D, none:    today's fixed-depth path (bit-identical to `search`), the node cap
+//	            as the only abort; stop=depth|nodes.
+//	none, B:    today's budget ladder; stop=budget|ladder_end|nodes.
+//	D, B:       DIRECT-FIRST: the fixed-depth-D search under deadline B. Completed
+//	            -> returned as is, stop=depth, bit-identical to the (D, none) row
+//	            on any machine. Aborted -> discarded; the ladder climbs the rungs
+//	            with depth <= D in the remaining time (insurance first);
+//	            stop=budget|nodes|ladder_end.
+//	none, none: "unbounded" — the whole ladder, the node cap the only stop;
+//	            stop=ladder_end|nodes. Reproducible in serial (a node cap is
+//	            hardware-independent).
+//
+// Why direct-first rather than "climb and stop at D": a capped climb reuses TT
+// values across rungs and is NOT bit-identical to a fresh fixed-depth-D search,
+// so the property that makes a depth cap worth having — capped and completed
+// means the same move as fixed depth D on every machine — would not hold.
+// Cost: on a move where D is unaffordable the failed attempt burns budget before
+// the fallback. Mitigation (tabs.ladderFirst): when the previous move's direct
+// attempt failed or exceeded directFirstBudgetFrac of B, this move runs the
+// capped ladder FIRST and tries the direct search only with what is left (and
+// only when the ladder's own top rung says D is affordable now).
+//
+// A depth-capped ladder that completes rung D reports stop=ladder_end, never
+// stop=depth: stop=depth is reserved for the bit-identical fixed-depth answer.
+// `adaptive` is honoured by the direct attempt exactly as by `search` (so the
+// (D, B) and (D, none) rows agree) and ignored by the ladder.
+func searchLimitedExt(
+	board uint64,
+	p4 float64,
+	adaptive bool,
+	eval Evaluator,
+	farm bool,
+	lim searchLimits,
+	tabs *searchTables,
+	ext *atomic.Bool,
+) (searchResult, bool) {
+	start := time.Now()
+	base := lim.baseCprob()
+	var nb *nodeBudget
+	if lim.maxNodes > 0 {
+		nb = &nodeBudget{cap: lim.maxNodes}
+	}
+	hasDL := lim.budgetMs > 0
+	budget := time.Duration(lim.budgetMs * float64(time.Millisecond))
+	deadline := start.Add(budget)
+	ll := ladderLimits{
+		start: start, budget: budget, deadline: deadline, hasDeadline: hasDL,
+		maxDepth: lim.maxDepth, cprob: base, nb: nb,
+	}
+	if lim.maxDepth <= 0 {
+		res, _, ok := ladderExt(board, p4, eval, farm, ll, tabs, ext)
+		return res, ok
+	}
+	if !hasDL && nb == nil {
+		// No clock, no cap: the plain fixed-depth search, byte for byte.
+		return searchFixedExt(board, lim.maxDepth, p4, adaptive, eval, farm, base, tabs, ext, time.Time{}, false, nil)
+	}
+	// direct runs the fixed-depth-D attempt under the request's limits and
+	// records its affordability for the next move. extFired distinguishes a
+	// speculative abort (the whole request must be dropped) from a limit abort.
+	direct := func() (res searchResult, ok bool, extFired bool) {
+		t0 := time.Now()
+		res, ok = searchFixedExt(board, lim.maxDepth, p4, adaptive, eval, farm, base, tabs, ext, deadline, hasDL, nb)
+		if ext != nil && ext.Load() {
+			return searchResult{}, false, true
+		}
+		if !ok {
+			res.nodes = tabs.lastIterNodes // the failed attempt's work still counts
+		}
+		tabs.ladderFirst = !ok || (hasDL && time.Since(t0) > time.Duration(float64(budget)*directFirstBudgetFrac))
+		return res, ok, false
+	}
+
+	var spent uint64
+	if !tabs.ladderFirst {
+		res, ok, extFired := direct()
+		if extFired {
+			return searchResult{}, false
+		}
+		if ok {
+			return res, true
+		}
+		spent = res.nodes
+	}
+	res, stats, ok := ladderExt(board, p4, eval, farm, ll, tabs, ext)
+	if !ok {
+		return searchResult{}, false
+	}
+	res.nodes += spent
+	if spent == 0 {
+		// Ladder-first move. Retry the direct search only if the ladder reached
+		// rung D and, under a clock, more than twice that rung's time is left: a
+		// fresh fixed-depth search gets no TT reuse, so the rung time is a floor.
+		reachedCap := res.depthLimit >= lim.maxDepth
+		switch {
+		case hasDL && reachedCap && stats.topRungTime > 0 && time.Until(deadline) > 2*stats.topRungTime:
+			ladderRes := res
+			res, ok, extFired := direct()
+			if extFired {
+				return searchResult{}, false
+			}
+			if ok {
+				res.nodes += ladderRes.nodes
+				return res, true
+			}
+			ladderRes.nodes += res.nodes
+			return ladderRes, true
+		case !hasDL && reachedCap:
+			tabs.ladderFirst = false // the cap fit under the node budget: try direct next move
+		}
+	}
+	return res, true
 }
 
 // ---------------------------------------------------------------------------
@@ -781,10 +1087,31 @@ func searchBudgetExt(
 // abort flag no matter what order the driver issues commands in.
 
 // prefetchEntry is the fully-computed answer for one speculative spawn state.
+// stop/nodes/cprob are the protocol-2 tail (reported by `lookup` only when the
+// prefetch request carried one — v2); the old wire never sees them.
 type prefetchEntry struct {
 	dir   int
 	value float64
 	depth int
+	stop  string
+	nodes uint64
+	cprob float64
+	v2    bool
+}
+
+// lookupTail formats the protocol-2 reply tail of a cached entry ("" for an
+// entry computed by an old-wire prefetch).
+func (e prefetchEntry) lookupTail() string {
+	if !e.v2 {
+		return ""
+	}
+	return " " + formatSearchTail(e.stop, e.nodes, e.cprob)
+}
+
+// formatSearchTail is the protocol-2 reply tail shared by search and lookup.
+func formatSearchTail(stop string, nodes uint64, cprob float64) string {
+	return "stop=" + stop + " nodes=" + strconv.FormatUint(nodes, 10) +
+		" cprob=" + strconv.FormatFloat(cprob, 'g', -1, 64)
 }
 
 var (
@@ -836,6 +1163,23 @@ func startPrefetch(
 	farm bool,
 	budgetMs float64,
 ) int {
+	return startPrefetchLimited(board, depth, p4, adaptive, eval, farm, budgetMs, nil)
+}
+
+// startPrefetchLimited is startPrefetch for a protocol-2 request: lim non-nil
+// selects searchLimitedExt with those limits (and marks the entries v2, so
+// `lookup` reports the stop tail); lim nil is the old wire — budgetMs > 0 the
+// budget ladder, else fixed depth/adaptive — unchanged.
+func startPrefetchLimited(
+	board uint64,
+	depth int,
+	p4 float64,
+	adaptive bool,
+	eval Evaluator,
+	farm bool,
+	budgetMs float64,
+	lim *searchLimits,
+) int {
 	stopPrefetch() // never two workers at once
 	states := enumerateSpawnStates(board)
 	prefetchMu.Lock()
@@ -854,10 +1198,14 @@ func startPrefetch(
 			}
 			var res searchResult
 			var completed bool
-			if budgetMs > 0 {
+			switch {
+			case lim != nil:
+				res, completed = searchLimitedExt(
+					b, p4, adaptive, eval, farm, *lim, specTables, &prefetchAbort)
+			case budgetMs > 0:
 				res, completed = searchBudgetExt(
 					b, p4, eval, farm, budgetMs, specTables, &prefetchAbort)
-			} else {
+			default:
 				res, completed = searchExt(
 					b, depth, p4, adaptive, eval, farm, specTables, &prefetchAbort)
 			}
@@ -869,6 +1217,10 @@ func startPrefetch(
 				dir:   res.bestDir,
 				value: res.bestValue,
 				depth: res.depthLimit,
+				stop:  res.stop,
+				nodes: res.nodes,
+				cprob: res.cprob,
+				v2:    lim != nil,
 			}
 			prefetchMu.Unlock()
 		}

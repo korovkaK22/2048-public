@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 
 from bot2048.ai import go_engine
-from bot2048.ai.go_engine import GoEngineError, GoExpectimaxStrategy
+from bot2048.ai.go_engine import GoEngineError, GoExpectimaxStrategy, SearchLimits
 
 
 class _FakeStdin:
@@ -100,8 +100,15 @@ def _bare_strategy() -> GoExpectimaxStrategy:
     strat._proc = None
     strat._reply_q = None
     strat._reader = None
-    strat._budget_ms = None
+    strat._limits = SearchLimits(max_depth=6)
+    strat._hang_timeout_s = go_engine._REPLY_TIMEOUT_FLOOR_S
+    strat._env = None
     strat._binary = Path("engine")  # never launched: Popen is monkeypatched
+    # The per-spawn `version` handshake is a real round-trip in production; the
+    # fake proc here answers one scripted line only, so pin its outcome instead.
+    strat._handshake = lambda _proc, _q: None  # type: ignore[method-assign]
+    strat._protocol = 1
+    strat._engine_info = {}
     return strat
 
 
@@ -152,17 +159,16 @@ def test_reply_under_bound_succeeds_without_firing(
 def test_reply_timeout_sits_above_endgame_budget() -> None:
     # Fixed-depth: the 15 s floor, comfortably above a deep search and the
     # <=9 s live endgame budget.
-    fixed = object.__new__(GoExpectimaxStrategy)
-    fixed._budget_ms = None
+    fixed = _bare_strategy()
     assert fixed._reply_timeout_s() == 15.0
     assert fixed._reply_timeout_s() > 9.0
 
     # Budget mode: 8x the budget, never below the floor. Even a 9 s endgame
     # budget yields a 72 s wait -- only a true stall waits that long.
-    small = object.__new__(GoExpectimaxStrategy)
-    small._budget_ms = 800.0
+    small = _bare_strategy()
+    small._limits = SearchLimits(budget_ms=800.0)
     assert small._reply_timeout_s() == 15.0  # floor wins for small budgets
-    big = object.__new__(GoExpectimaxStrategy)
-    big._budget_ms = 9000.0
+    big = _bare_strategy()
+    big._limits = SearchLimits(budget_ms=9000.0)
     assert big._reply_timeout_s() == pytest.approx(72.0)
-    assert big._reply_timeout_s() > big._budget_ms / 1000.0
+    assert big._reply_timeout_s() > 9000.0 / 1000.0

@@ -51,7 +51,7 @@ def test_make_strategy_go_budget_ms_threads_into_engine() -> None:
     strat = _make_strategy("go", 6, budget_ms=100)
     try:
         assert isinstance(strat, GoExpectimaxStrategy)
-        assert strat._budget_ms == 100.0
+        assert strat.budget_ms == 100.0
         assert strat.name == "go-expectimax(budget=100ms)"
     finally:
         strat.close()  # type: ignore[attr-defined]
@@ -65,7 +65,7 @@ def test_make_strategy_go_without_budget_keeps_fixed_depth() -> None:
     strat = _make_strategy("go", 6)
     try:
         assert isinstance(strat, GoExpectimaxStrategy)
-        assert strat._budget_ms is None
+        assert strat.budget_ms is None
         assert strat.name == "go-expectimax(depth=6)"
     finally:
         strat.close()  # type: ignore[attr-defined]

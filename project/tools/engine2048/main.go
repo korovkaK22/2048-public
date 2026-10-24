@@ -25,9 +25,25 @@ import (
 //	     much the clock allowed — so simulations must NOT use it. With
 //	     budget_ms absent or 0 the search is the fixed-depth, single-core,
 //	     bit-for-bit reproducible one that simulations rely on.)
+//
+//	search <16hex> <depth> <p4> <adaptive 0|1> <mode 0|1> <budget_ms> [maxdepth=D|0] [nodes=N|0] [cprob=C]
+//	    -> <dir> <value> <ms> <depth_reached> stop=<reason> nodes=<N> cprob=<C>
+//	    (PROTOCOL 2, additive: a request that carries any `k=v` tail selects
+//	     the limited search (search.go searchLimitedExt) — two INDEPENDENT
+//	     optional limits, maxdepth and budget_ms (0 = none each), stopping at
+//	     whichever hits first, plus the nodes guard; cprob pins the base
+//	     horizon. maxdepth=D with budget_ms=0 is the fixed-depth path; with a
+//	     budget it is direct-first: the fixed-depth-D answer when it fits
+//	     (stop=depth, bit-identical to fixed depth), else the ladder capped at
+//	     D. budget_ms=0 is allowed here (it is "none"). Without a tail the
+//	     positional <depth> is the cap for a 0/absent budget and ignored for a
+//	     positive one, exactly as before; with a tail that lacks maxdepth= the
+//	     same rule applies. The reply tail is emitted ONLY for tailed requests,
+//	     so the old wire is byte-identical. stop is one of depth | budget |
+//	     nodes | ladder_end.)
 //	move <16hex> <dir>
 //	    -> <16hex-newboard> <score> <moved 0|1>
-//	prefetch <16hex> <depth> <p4> <adaptive 0|1> <mode 0|1> <budget_ms>
+//	prefetch <16hex> <depth> <p4> <adaptive 0|1> <mode 0|1> <budget_ms> [maxdepth=…] [nodes=…] [cprob=…]
 //	    -> ok <n_states>
 //	    (speculative: enumerates every spawn state of the given post-swipe
 //	     board — each empty cell x {2, 4}, 2-spawns first — and computes the
@@ -37,9 +53,10 @@ import (
 //	     within a sub-millisecond poll window before being handled, so
 //	     speculation never delays a real request.)
 //	lookup <16hex>
-//	    -> hit <dir> <value> <depth> | miss
+//	    -> hit <dir> <value> <depth> [stop=… nodes=… cprob=…] | miss
 //	    (served from the prefetch cache; never triggers a search and does
-//	     not interrupt an in-flight prefetch)
+//	     not interrupt an in-flight prefetch; the tail only for entries a
+//	     tailed — protocol-2 — prefetch computed)
 //	version
 //	    -> version protocol=<n> go=<ver> <KEY>=<value> ... (the 18 farm
 //	     weights + BOT2048_CPROB_THRESH the engine ACTUALLY applied at
@@ -86,7 +103,63 @@ func formatBoardHex(bb uint64) string {
 	return string(buf[:])
 }
 
+// splitLimitTail separates a request's positional fields from its protocol-2
+// `k=v` tail (everything from the first field containing '='). An old-wire
+// request has an empty tail.
+func splitLimitTail(fields []string) (pos, tail []string) {
+	for i, f := range fields {
+		if strings.Contains(f, "=") {
+			return fields[:i], fields[i:]
+		}
+	}
+	return fields, nil
+}
+
+// parseLimitTail decodes the protocol-2 tail: maxdepth=D|0, nodes=N|0,
+// cprob=C. hasMaxDepth says whether maxdepth= was present at all (absent means
+// "the positional depth rule applies", 0 means None).
+func parseLimitTail(tail []string) (lim searchLimits, hasMaxDepth bool, err error) {
+	for _, kv := range tail {
+		key, val, _ := strings.Cut(kv, "=")
+		switch key {
+		case "maxdepth":
+			d, perr := strconv.Atoi(val)
+			if perr != nil || d < 0 {
+				return lim, false, fmt.Errorf("maxdepth must be an integer >= 0 (0 = none)")
+			}
+			lim.maxDepth, hasMaxDepth = d, true
+		case "nodes":
+			n, perr := strconv.ParseUint(val, 10, 64)
+			if perr != nil {
+				return lim, false, fmt.Errorf("nodes must be an integer >= 0 (0 = none)")
+			}
+			lim.maxNodes = n
+		case "cprob":
+			c, perr := strconv.ParseFloat(val, 64)
+			if perr != nil || c <= 0 || c > 1 {
+				return lim, false, fmt.Errorf("cprob must be a float in (0, 1]")
+			}
+			lim.cprob = c
+		default:
+			return lim, false, fmt.Errorf("unknown limit %q (want maxdepth= nodes= cprob=)", key)
+		}
+	}
+	return lim, hasMaxDepth, nil
+}
+
+// resolveLimits applies the positional-depth rule to a tailed request: without
+// maxdepth= the positional depth caps a search with no budget (the old
+// fixed-depth semantics) and nothing caps a budgeted one (the old ladder).
+func resolveLimits(lim searchLimits, hasMaxDepth bool, depth int, budgetMs float64) searchLimits {
+	lim.budgetMs = budgetMs
+	if !hasMaxDepth && budgetMs <= 0 {
+		lim.maxDepth = depth
+	}
+	return lim
+}
+
 func handleSearch(fields []string, eval Evaluator) string {
+	fields, tail := splitLimitTail(fields)
 	if len(fields) < 5 || len(fields) > 7 {
 		return "err usage: search <16hex> <depth> <p4> <adaptive 0|1> [mode 0|1] [budget_ms]"
 	}
@@ -125,9 +198,31 @@ func handleSearch(fields []string, eval Evaluator) string {
 	budgetMs := 0.0
 	if len(fields) == 7 {
 		budgetMs, err = strconv.ParseFloat(fields[6], 64)
-		if err != nil || budgetMs <= 0.0 || budgetMs > 600000.0 {
+		if tail != nil {
+			// Protocol 2: budget_ms 0 is "no clock" (the depth cap / node cap stop
+			// the search instead).
+			if err != nil || budgetMs < 0.0 || budgetMs > 600000.0 {
+				return "err budget_ms must be a float in [0, 600000] (0 = none)"
+			}
+		} else if err != nil || budgetMs <= 0.0 || budgetMs > 600000.0 {
 			return "err budget_ms must be a float in (0, 600000]"
 		}
+	}
+	if tail != nil {
+		lim, hasMaxDepth, err := parseLimitTail(tail)
+		if err != nil {
+			return "err " + err.Error()
+		}
+		lim = resolveLimits(lim, hasMaxDepth, depth, budgetMs)
+		start := time.Now()
+		res, completed := searchLimitedExt(board, p4, adaptive, eval, farm, lim, realTables, nil)
+		if !completed {
+			// Unreachable without an ext flag (see `search`); fail loudly.
+			panic("engine2048: limited search aborted with no abort source armed")
+		}
+		ms := float64(time.Since(start).Nanoseconds()) / 1e6
+		return fmt.Sprintf("%d %.6f %.3f %d %s", res.bestDir, res.bestValue, ms, res.depthLimit,
+			formatSearchTail(res.stop, res.nodes, res.cprob))
 	}
 	start := time.Now()
 	var res searchResult
@@ -163,6 +258,7 @@ func handleMove(fields []string) string {
 }
 
 func handlePrefetch(fields []string, eval Evaluator) string {
+	fields, tail := splitLimitTail(fields)
 	if len(fields) != 7 {
 		return "err usage: prefetch <16hex> <depth> <p4> <adaptive 0|1> <mode 0|1> <budget_ms>"
 	}
@@ -200,6 +296,15 @@ func handlePrefetch(fields []string, eval Evaluator) string {
 	if err != nil || budgetMs < 0.0 || budgetMs > 600000.0 {
 		return "err budget_ms must be a float in [0, 600000] (0 = fixed depth)"
 	}
+	if tail != nil {
+		lim, hasMaxDepth, err := parseLimitTail(tail)
+		if err != nil {
+			return "err " + err.Error()
+		}
+		lim = resolveLimits(lim, hasMaxDepth, depth, budgetMs)
+		n := startPrefetchLimited(board, depth, p4, adaptive, eval, farm, budgetMs, &lim)
+		return fmt.Sprintf("ok %d", n)
+	}
 	n := startPrefetch(board, depth, p4, adaptive, eval, farm, budgetMs)
 	return fmt.Sprintf("ok %d", n)
 }
@@ -213,13 +318,16 @@ func handleLookup(fields []string) string {
 		return "err " + err.Error()
 	}
 	if e, ok := lookupPrefetch(board); ok {
-		return fmt.Sprintf("hit %d %.6f %d", e.dir, e.value, e.depth)
+		return fmt.Sprintf("hit %d %.6f %d", e.dir, e.value, e.depth) + e.lookupTail()
 	}
 	return "miss"
 }
 
 // engineProtocolVersion is bumped whenever the stdio protocol changes shape.
-const engineProtocolVersion = 1
+// 2 = the additive `k=v` limits tail (maxdepth= nodes= cprob=) on search and
+// prefetch, with the stop=/nodes=/cprob= reply tail; the version-1 wire is a
+// byte-identical subset.
+const engineProtocolVersion = 2
 
 // handleVersion reports what this engine IS and what it actually DOES: the
 // protocol/toolchain version plus the effective value of every farm weight,
@@ -233,6 +341,9 @@ func handleVersion() string {
 		"version",
 		"protocol=" + strconv.Itoa(engineProtocolVersion),
 		"go=" + runtime.Version(),
+		// Which engine this is: the client picks the source tree to hash (and
+		// the semantics to expect) from this key, not from the binary's path.
+		"engine=engine2048",
 		// The live search's pool width. It affects ONLY budget_ms searches (the
 		// fixed-depth path simulations use is serial whatever this says), but a
 		// live run's achieved depth depends on it, so it belongs in the record.
