@@ -66,7 +66,7 @@ class SecureWinPhone(FakePhone):
             return ""  # blank hierarchy: no anchors at all (not an auth wall)
         return super().ui_dump()
 
-    def tap(self, x: int, y: int) -> None:
+    def tap(self, x: int, y: int, *, sensitive: bool = False) -> None:
         if self.state == "securewin":
             self.taps.append((x, y))
             if (x, y) == ui_map.WIN_NEW_GAME and self.blind_holds == 0:

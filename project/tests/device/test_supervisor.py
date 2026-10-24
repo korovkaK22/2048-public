@@ -59,7 +59,7 @@ class _FakeDevice:
     def ui_dump(self) -> str:  # pragma: no cover - screencap never blinds here
         return ""
 
-    def tap(self, x: int, y: int) -> None:
+    def tap(self, x: int, y: int, *, sensitive: bool = False) -> None:
         self.taps.append((x, y))
 
     def wake(self) -> None:

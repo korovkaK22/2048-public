@@ -72,7 +72,7 @@ class FakeDevice:
         self._frame += 1
         return np.full((4, 4, 3), self._frame % 251, dtype=np.uint8)
 
-    def tap(self, x: int, y: int) -> None:
+    def tap(self, x: int, y: int, *, sensitive: bool = False) -> None:
         self.taps.append((x, y))
         if (x, y) == ui_map.NEW_GAME and self.state == "game":
             self.state = "confirm"

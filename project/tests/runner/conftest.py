@@ -136,7 +136,7 @@ class FakePhone:
         anchor = ui_map.AUTH_TEXT_ANCHOR if self.state == "auth" else "game"
         return f"<hierarchy>{anchor}</hierarchy>"
 
-    def tap(self, x: int, y: int) -> None:
+    def tap(self, x: int, y: int, *, sensitive: bool = False) -> None:
         self.taps.append((x, y))
         if self.state == "auth":
             if (x, y) in ui_map.PIN_KEYS.values():

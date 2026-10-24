@@ -62,7 +62,7 @@ class _AuthOnNewGamePhone(FakePhone):
     appears once the PIN clears the wall.
     """
 
-    def tap(self, x: int, y: int) -> None:
+    def tap(self, x: int, y: int, *, sensitive: bool = False) -> None:
         if (x, y) == ui_map.CONFIRM_YES and self.state == "confirm":
             self.taps.append((x, y))
             self.state = "auth"
