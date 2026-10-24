@@ -31,7 +31,7 @@ Bundle-level rules:
   lands in the SAME directory as ``alert_fatal.json`` /
   ``screenshot_fatal.png`` / ``state_probes_fatal.json`` / ``traceback_fatal.txt``
   -- one incident, one folder (the old ``-2`` sibling directories are gone);
-* **de-duplication** -- a repeat of the same code+level within
+* **de-duplication** -- a repeat of the same code (any level) within
   :data:`DEDUPE_WINDOW_S` appends one line to ``alerts_repeat.jsonl`` in the
   previous bundle instead of a new directory (no new screenshots): a storm
   costs one bundle per window, every alert row still points at a folder;
@@ -103,8 +103,10 @@ DEFAULT_MAX_BUNDLES: int = 1000
 #: 0.5 s + wake/settle pauses).
 CHAIN_WINDOW_S: float = 120.0
 
-#: Same code + same level again within this window -> no new bundle, one
-#: line in the previous bundle's ``alerts_repeat.jsonl``.
+#: The same code again (any level) within this window -> no new bundle, one
+#: line in the previous bundle's ``alerts_repeat.jsonl``. The window counts
+#: from the bundle's FIRST alert, so a continuous storm still gets a fresh
+#: bundle (new screenshot) once per window.
 DEDUPE_WINDOW_S: float = 30.0
 
 #: Bundle directory names: ``20260710T140322Z_AUTH_REQUIRED`` (+ ``-N``).
@@ -538,8 +540,10 @@ class IncidentSink:
             if not attached:
                 # A repeat keeps the FIRST occurrence's stamp, so a continuous
                 # storm still opens a fresh bundle (new screenshot) once per
-                # dedupe window instead of attaching forever.
-                self._last = _Last(code, level, target, now)
+                # dedupe window instead of attaching forever. A chained FATAL
+                # keeps the ERROR's stamp for the same reason.
+                stamp = self._last.ts if (chained and self._last is not None) else now
+                self._last = _Last(code, level, target, stamp)
                 if not chained:
                     self._prune()
             log.info(
@@ -567,8 +571,7 @@ class IncidentSink:
         last = self._last
         if last is not None and last.code is code and last.bundle_dir.is_dir():
             age = now - last.ts
-            if last.level is level and age <= self.dedupe_window_s:
-                return last.bundle_dir, False, True
+            # The ERROR -> failed recovery -> FATAL ladder: one incident.
             if (
                 last.level is AlertLevel.ERROR
                 and level is AlertLevel.FATAL
@@ -576,6 +579,11 @@ class IncidentSink:
                 and not (last.bundle_dir / "alert_fatal.json").exists()
             ):
                 return last.bundle_dir, True, False
+            # A storm of the same code (any level: the DEVICE_LOST cycle is
+            # ERROR, FATAL, LOOP_ERROR-attached, ERROR, FATAL, ... every few
+            # seconds) costs ONE bundle per dedupe window.
+            if age <= self.dedupe_window_s:
+                return last.bundle_dir, False, True
         return self._new_dir(code, now), False, False
 
     def _new_dir(self, code: AlertCode, now: float) -> Path:
@@ -645,7 +653,8 @@ class IncidentSink:
                 self.ring.snapshot() if self.ring is not None else [],
             )
         if after is not None:
-            write_png(bundle / f"screenshot_after{sfx}.png", after)
+            after_name = "screenshot_fatal.png" if chained else "screenshot_after.png"
+            write_png(bundle / after_name, after)
         if probe is not None and probe.uidump_xml is not None:
             _write_text(bundle / f"uidump{sfx}.xml", probe.uidump_xml)
         if board is not None:

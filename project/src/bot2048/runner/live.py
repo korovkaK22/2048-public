@@ -473,7 +473,15 @@ class LiveRunner:
             )
         )
         self._incidents.context_provider = self._incident_context
+        # A supervisor wired without ops/run_id/ring (tests, bare wiring) still
+        # gets the runner's: the DB mirror and the fresh-capture hook live there.
+        if self._incidents.ops is None:
+            self._incidents.ops = self.ops
+        if self._incidents.run_id is None:
+            self._incidents.run_id = self.run_id
         if self.ring is not None:
+            if self._incidents.ring is None:
+                self._incidents.ring = self.ring
             self.ring.set_capture(self._incident_capture)
         # Auth-wall flow (R5): opt-in auto-login for the main loop
         # (``handle_auth``) and the restart flow (``resolve_restart_auth``). The
