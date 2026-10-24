@@ -11,7 +11,7 @@
 #   3. both Go engines built NATIVELY for arm64 with `go build -pgo=auto`
 #      (default.pgo is gitignored and x86-generated -- regenerate per BUILD.md;
 #      without it -pgo=auto is a no-op, which is fine for a first run)
-#   4. scripts/fetch_weights.sh (champion-wall-snap-0316.bin, w-l0.003.bin)
+#   4. scripts/fetch_weights.sh (w-l0.003.bin = live net, champion-wall-snap-0316.bin)
 #   5. prints the pmset / caffeinate / launchd commands -- it never runs sudo.
 #
 # After this: docs/macos-setup.md "first run" checklist (adb key, adb devices,
@@ -95,7 +95,7 @@ command -v go >/dev/null 2>&1 || { echo "error: go not on PATH (brew install go)
 # --- 4. weights ----------------------------------------------------------------
 if [[ $do_weights -eq 1 ]]; then
     step "n-tuple weights"
-    scripts/fetch_weights.sh || echo "warning: fetch_weights.sh reported a problem -- see above (live.sh refuses to start without the wall net)"
+    scripts/fetch_weights.sh || echo "warning: fetch_weights.sh reported a problem -- see above (live.sh refuses to start without run/w-l0.003.bin)"
 fi
 
 # --- 5. power / launchd guidance (printed, never executed) ---------------------

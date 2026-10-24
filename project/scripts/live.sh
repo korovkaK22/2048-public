@@ -3,18 +3,22 @@
 # environment, from any host (macOS primary, Linux/Windows Git Bash still work).
 #
 # Usage (from anywhere; the script cd's into project/ itself):
-#   scripts/live.sh --strategy go --depth 4 --budget-ms 250 --capture apk --auto-login --games 0
+#   scripts/live.sh --strategy go --depth 4 --prefetch --capture apk --auto-login --games 0
 #   scripts/live.sh once --capture apk            # dry run: one capture -> state -> decide
 #   scripts/live.sh research --games 20           # spawn-rule measurement
 # The first word selects the `live` sub-command (default: play); everything
-# else is passed through to the CLI untouched.
+# else is passed through to the CLI untouched. The production command on the
+# i7 (verified from its live DB) was: champion net w-l0.003.bin + record
+# engine, expectimax FIXED depth 4 (no --budget-ms), --prefetch, --capture apk,
+# --auto-login -- i.e. config/strategies/champion-live.json.
 #
 # What it sets up (and why):
 #   * cwd = project/, Homebrew on PATH, venv python, PYTHONPATH=src  (_host_env.sh)
 #   * MONO_PIN from ../.secrets/device.env  (opt-in --auto-login reads it)
-#   * the n-tuple engine binary + the canonical live net + the record-engine
-#     levers as env vars for the Go engine (it reads them once at startup and
-#     reports them via `version`, so a run's provenance is in the DB)
+#   * the n-tuple engine binary + the canonical live net (w-l0.003.bin) + the
+#     record-engine levers as env vars for the Go engine (it reads them once
+#     at startup and reports them via `version`, so a run's provenance is in
+#     the DB)
 #   * BOT2048_EVAL_MLP=0 on arm64 (audit B3: the MLP gather-split leaf is an
 #     x86 win and regressed 8-15% on Apple M4 -- experiment-log 2026-07-12)
 #   * BOT2048_SEARCH_WORKERS = number of PERFORMANCE cores on macOS (audit B1:
@@ -22,11 +26,13 @@
 #     search tail); elsewhere the engine's own default is kept
 #   * caffeinate -is on macOS: no idle/system sleep while the runner is alive
 #
-# TODO(StrategySpec): every BOT2048_* knob below is a stop-gap. Once the
-# StrategySpec factory lands (config/strategies/champion-live.json, being built
-# by another agent), the engine binary, the weights path and the record levers
-# move into that JSON and this script shrinks to "cd + venv + secrets + exec".
-# Keep this block in sync with that file until then; do NOT add new knobs here.
+# TODO(StrategySpec): every BOT2048_* knob below is a stop-gap. The specs now
+# live in config/strategies/ (champion-live.json = w-l0.003 + record engine,
+# depth 4; wall-record.json = the wall net; champion-l0003.json = record off);
+# once the live CLI consumes a StrategySpec, the engine binary, the weights
+# path and the record levers come from that JSON and this script shrinks to
+# "cd + venv + secrets + exec". Keep this block in sync with
+# champion-live.json until then; do NOT add new knobs here.
 set -euo pipefail
 
 # shellcheck source=_host_env.sh
@@ -44,17 +50,23 @@ engine_bin="${BOT2048_ENGINE2048_BIN:-$PROJECT_DIR/tools/ntuple/ntuple$exe}"
   NOTE: do not let go_engine.py auto-build it -- that path builds tools/engine2048, not ntuple."
 export BOT2048_ENGINE2048_BIN="$engine_bin"
 
-weights="${BOT2048_NTUPLE_WEIGHTS:-$PROJECT_DIR/tools/ntuple/run/champion-wall-snap-0316.bin}"
+# Canonical live net = the champion w-l0.003.bin (what the i7 actually played;
+# config/strategies/champion-live.json). The wall net champion-wall-snap-0316.bin
+# is the record-parity alternative (wall-record.json) -- select it by exporting
+# BOT2048_NTUPLE_WEIGHTS before calling this script.
+weights="${BOT2048_NTUPLE_WEIGHTS:-$PROJECT_DIR/tools/ntuple/run/w-l0.003.bin}"
 [[ -f "$weights" ]] || die "weights not found: $weights
   fetch them:  scripts/fetch_weights.sh"
-# Explicit on purpose: an arg-less engine launch probes w-l0.003.bin FIRST
-# (serve.go weightCandidates), which is the OLD champion, not the record net.
+# Explicit on purpose: the arg-less engine launch probes the run/ dir by
+# filename (serve.go weightCandidates) -- whichever file happens to exist
+# would decide the net. Provenance must not depend on directory contents.
 export BOT2048_NTUPLE_WEIGHTS="$weights"
 
 # --- record engine (docs/record-engine.md "validated winning config") --------
 # docs/knowledge/record-is-midgame-mass.md:21-22 -- depth 4, EMPTIES=8,
-# NODES=6e6, PCONF=0.6, EARLYFIRE=300, EARLY_EMPTIES=1. `${X:-default}` so a
-# one-off override from the shell still wins.
+# NODES=6e6, PCONF=0.6, EARLYFIRE=300, EARLY_EMPTIES=1; the same levers the i7
+# ran with the champion net. `${X:-default}` so a one-off override from the
+# shell still wins (BOT2048_RECORD_ENGINE=0 = champion-l0003.json).
 export BOT2048_RECORD_ENGINE="${BOT2048_RECORD_ENGINE:-1}"
 export BOT2048_TARGET="${BOT2048_TARGET:-49601}"
 export BOT2048_EXACT_EMPTIES="${BOT2048_EXACT_EMPTIES:-8}"

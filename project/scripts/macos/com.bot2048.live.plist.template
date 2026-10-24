@@ -24,14 +24,15 @@
         <string>/bin/bash</string>
         <string>@REPO@/project/scripts/live.sh</string>
         <string>play</string>
-        <!-- Production args. Adjust to the current i7 production command
-             (audit F1); live.sh only adds the engine env, not CLI flags. -->
+        <!-- Production args = the i7 production command (verified from its
+             live DB; config/strategies/champion-live.json): expectimax FIXED
+             depth 4 (no budget-ms), prefetch on, APK capture, auto-login.
+             live.sh adds the engine env (w-l0.003.bin + record engine). -->
         <string>--strategy</string>
         <string>go</string>
         <string>--depth</string>
         <string>4</string>
-        <string>--budget-ms</string>
-        <string>250</string>
+        <string>--prefetch</string>
         <string>--capture</string>
         <string>apk</string>
         <string>--auto-login</string>

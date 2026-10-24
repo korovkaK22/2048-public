@@ -1,28 +1,32 @@
 #!/usr/bin/env bash
 # Fetch the n-tuple net weights, which are NOT in git (56 MB each), into
-# tools/ntuple/run/:
+# tools/ntuple/run/. Both are needed on a live host:
 #
-#   champion-wall-snap-0316.bin  REQUIRED  the canonical LIVE / record-engine net
-#                                          (md5 + size verified)
-#   w-l0.003.bin                 optional  the historical champion (arena
-#                                          baselines, parity checks). No pinned
-#                                          checksum: verified only as "a real
-#                                          binary of plausible size".
+#   w-l0.003.bin                 the CHAMPION = canonical LIVE net
+#                                (config/strategies/champion-live.json: what the
+#                                i7 production actually played, + record engine,
+#                                depth 4). No pinned checksum: verified as "a
+#                                real binary of plausible size".
+#   champion-wall-snap-0316.bin  the WALL net = record-parity alternative
+#                                (wall-record.json); md5 + size pinned.
 #
-# The bot runs fine without any of them: the default engine (tools/engine2048)
+# The bot runs without them for sims: the default engine (tools/engine2048)
 # needs no weight file, and the ntuple Go tests skip themselves when a net is
-# absent. scripts/live.sh REQUIRES the wall net and pins it explicitly via
-# BOT2048_NTUPLE_WEIGHTS (an arg-less engine launch would probe w-l0.003.bin
-# first -- serve.go weightCandidates -- which is the wrong net for live).
+# absent. scripts/live.sh REQUIRES w-l0.003.bin (or whatever
+# BOT2048_NTUPLE_WEIGHTS points at) and pins it explicitly, because an
+# arg-less engine launch picks the net by probing run/ for filenames
+# (serve.go weightCandidates) -- provenance must not depend on dir contents.
 #
 # URL resolution (per asset):
 #   1. $BOT2048_WEIGHTS_BASE_URL/<asset>, if set (a directory-like URL)
-#   2. $BOT2048_WEIGHTS_URL, if set -- a direct URL for the REQUIRED asset only
-#      (kept for backwards compatibility)
+#   2. $BOT2048_WEIGHTS_URL, if set -- a direct URL for the WALL net only
+#      (kept for backwards compatibility with the single-asset script)
 #   3. the latest GitHub Release asset of this repo's `origin` remote
 #
-# Exit code: 0 when the required net is present and verified (a missing
-# OPTIONAL asset is reported loudly but does not fail); 1 otherwise.
+# Exit code: 0 when every asset is present and verified; 1 otherwise. A
+# missing asset is never silent: each one gets its own explicit message, and
+# w-l0.003.bin in particular says how to get it if the release lacks it
+# (copy project/tools/ntuple/run/w-l0.003.bin from the Windows box).
 #
 # Usage (from project/):
 #   scripts/fetch_weights.sh
@@ -32,10 +36,12 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 dest_dir="$script_dir/../tools/ntuple/run"
 
-# name | md5 (or "-" = unpinned) | size (or "-" = unpinned, >= MIN_PLAUSIBLE) | required
+# name | md5 (or "-" = unpinned) | size (or "-" = unpinned, >= MIN_PLAUSIBLE) | required|optional
+# Both are "required" on a live host; the field stays so a future asset can be
+# optional (an optional miss is a WARNING and exit 0, a required miss exit 1).
 ASSETS=(
+    "w-l0.003.bin|-|-|required"
     "champion-wall-snap-0316.bin|b030c9664436043fd4ae769e7aebb9e2|56690016|required"
-    "w-l0.003.bin|-|-|optional"
 )
 MIN_PLAUSIBLE_SIZE=$((40 * 1024 * 1024))   # every net of this family is ~56 MB
 
@@ -78,7 +84,7 @@ resolve_url() {
         printf '%s/%s\n' "${BOT2048_WEIGHTS_BASE_URL%/}" "$asset"
         return 0
     fi
-    if [ "$required" = "required" ] && [ -n "${BOT2048_WEIGHTS_URL:-}" ]; then
+    if [ "$asset" = "champion-wall-snap-0316.bin" ] && [ -n "${BOT2048_WEIGHTS_URL:-}" ]; then
         printf '%s\n' "$BOT2048_WEIGHTS_URL"
         return 0
     fi
@@ -130,19 +136,16 @@ for spec in "${ASSETS[@]}"; do
     tmp="$dest.part"
     if ! download "$url" "$tmp"; then
         rm -f "$tmp"
-        if [ "$required" = "required" ]; then
-            echo "error: could not download the REQUIRED asset $asset from" >&2
-            echo "       $url" >&2
-            echo "       (private repo? no release yet? -> set BOT2048_WEIGHTS_BASE_URL)" >&2
-            failed_required=1
-        else
-            echo "note: optional asset $asset is NOT available at" >&2
-            echo "      $url" >&2
-            echo "      It is not published in the release. Live play does not need it" >&2
-            echo "      (live.sh pins the wall net); copy it by hand into $dest_dir if an" >&2
-            echo "      arena baseline needs it." >&2
-            missing_optional+=("$asset")
+        echo "error: could not download $asset ($required) from" >&2
+        echo "       $url" >&2
+        echo "       (private repo without a token? asset not in the release? -> set" >&2
+        echo "        BOT2048_WEIGHTS_BASE_URL to a dir that has it)" >&2
+        if [ "$asset" = "w-l0.003.bin" ]; then
+            echo "       w-l0.003.bin is the LIVE net (champion-live.json). If the release does" >&2
+            echo "       not publish it, copy it from the Windows box:" >&2
+            echo "         scp <win>:monobank-2048/project/tools/ntuple/run/w-l0.003.bin $dest_dir/" >&2
         fi
+        if [ "$required" = "required" ]; then failed_required=1; else missing_optional+=("$asset"); fi
         continue
     fi
 
@@ -165,11 +168,12 @@ done
 
 echo
 if [ "$failed_required" -ne 0 ]; then
-    echo "FAILED: the required live net is missing -- scripts/live.sh will refuse to start." >&2
+    echo "FAILED: a required net is missing (see errors above)." >&2
+    echo "        scripts/live.sh refuses to start without run/w-l0.003.bin." >&2
     exit 1
 fi
 if [ "${#missing_optional[@]}" -gt 0 ]; then
     echo "WARNING: optional asset(s) not fetched: ${missing_optional[*]} (see notes above)."
 fi
-echo "Live uses:  BOT2048_NTUPLE_WEIGHTS=$dest_dir/champion-wall-snap-0316.bin  (set by scripts/live.sh)"
-echo "Explicit:   ntuple -weights run/champion-wall-snap-0316.bin"
+echo "Live (champion-live):  BOT2048_NTUPLE_WEIGHTS=$dest_dir/w-l0.003.bin  (default in scripts/live.sh)"
+echo "Wall net (wall-record): BOT2048_NTUPLE_WEIGHTS=$dest_dir/champion-wall-snap-0316.bin scripts/live.sh ..."
