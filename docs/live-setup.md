@@ -1,10 +1,18 @@
 # Live setup — phone, ADB, calibration
 
-Step-by-step guide from a bare Windows host to a bot playing 2048 inside
-the monobank app (`com.ftband.mono`, reference screen 1080×2400).
+Step-by-step guide from a bare host (macOS or Windows) to a bot playing 2048
+inside the monobank app (`com.ftband.mono`, reference screen 1080×2400).
+The primary live host is the Mac mini — its end-to-end runbook (brew, launchd,
+power, adb key copy, first-hour checklist) is `macos-setup.md`; this file is
+the OS-neutral part.
 
 Live play ALWAYS runs on the host. Docker is only for batch simulations
 (see `project/docker/compose.yaml`).
+
+Paths below use `$PY` for the venv interpreter: `.venv/bin/python` on
+macOS/Linux, `.venv/Scripts/python.exe` on Windows (Git Bash). `adb` means the
+adb the CLI resolves: `tools/platform-tools/adb[.exe]` if that dir exists, else
+the one on PATH (Homebrew on macOS). Prefer ONE adb per machine.
 
 ## 1. Install adb + scrcpy
 
@@ -13,8 +21,11 @@ cd project
 scripts/setup_adb.sh          # idempotent; --force to re-download
 ```
 
-This puts Android platform-tools and scrcpy into `project/tools/`
-(gitignored) and verifies `adb version`.
+Branches on `uname -s`: on macOS with Homebrew it installs the
+`android-platform-tools` cask and `scrcpy` (nothing goes into `tools/`); on
+Windows/Linux (or a Mac without brew) it downloads this OS's platform-tools
+zip and scrcpy release into `project/tools/` (gitignored). Either way it
+verifies `adb version`.
 
 ## 2. Enable USB debugging on the phone
 
@@ -28,16 +39,21 @@ This puts Android platform-tools and scrcpy into `project/tools/`
 4. Verify:
 
 ```bash
-tools/platform-tools/adb.exe devices
+adb devices
 # -> <serial>   device        (NOT "unauthorized" / "offline")
 ```
 
-Optional live mirroring while the bot plays: `tools/scrcpy/scrcpy.exe`.
+Moving hosts? Copy the already-trusted host key (`~/.android/adbkey*`, on
+Windows `%USERPROFILE%\.android\`) to the new machine instead of re-confirming
+on the phone — details in `macos-setup.md` §4.
+
+Optional live mirroring while the bot plays: `scrcpy` (brew) or
+`tools/scrcpy/scrcpy[.exe]`.
 
 ## 3. Install the device extras (host only)
 
 ```bash
-./.venv/Scripts/pip install -e .[device]   # adbutils, opencv, pillow
+$PY -m pip install -e ".[device]"   # adbutils, opencv, pillow
 ```
 
 ## 4. Calibration screenshots
@@ -47,7 +63,7 @@ device — `Screenshot_*_com.ftband.mono.jpg`). If you recalibrate (new
 device/DPI), capture with the game open:
 
 ```bash
-tools/platform-tools/adb.exe exec-out screencap -p > ../screens/board.png
+adb exec-out screencap -p > ../screens/board.png
 ```
 
 States to capture:
@@ -72,9 +88,9 @@ covered), «Нова гра» button bottom-center, sound button bottom-right, c
 ## 5. Build the calibration file
 
 ```bash
-./.venv/Scripts/bot2048 vision calibrate --image ../screens/<board>.jpg
+$PY -m bot2048.cli vision calibrate --image ../screens/<board>.jpg
 # (skeleton for now — writes data/calibration.json when implemented)
-./.venv/Scripts/bot2048 vision parse ../screens/<board>.jpg   # sanity check
+$PY -m bot2048.cli vision parse ../screens/<board>.jpg   # sanity check
 ```
 
 `data/calibration.json` (gitignored) stores: board bbox, 16 cell centers,
@@ -84,15 +100,29 @@ Tile colors are clearly distinct (2=dark gray, 4=slate gray-violet, 8=blue,
 
 ## 6. Run
 
+Production launcher (sets the engine env — champion net `w-l0.003.bin` +
+record engine, `EVAL_MLP`/workers per host, `MONO_PIN` from `.secrets/`,
+`caffeinate` on macOS — then execs the CLI):
+
 ```bash
-./.venv/Scripts/bot2048 live play --strategy expectimax --games 1
-./.venv/Scripts/bot2048 live research --games 20     # spawn-rule measurement
+scripts/live.sh --strategy go --depth 4 --prefetch --capture apk --auto-login --games 1
+scripts/live.sh once --capture apk          # dry run: one capture -> state -> decide
+scripts/live.sh research --games 20         # spawn-rule measurement
 ```
 
-Both are wired skeletons today: they validate calibration, construct the
-runner and exit with code 2 explaining what is still missing.
+Bare CLI (no engine env; the Python expectimax, fine for smoke tests):
+
+```bash
+$PY -m bot2048.cli live play --strategy expectimax --games 1
+```
 
 ## Minicap frame stream — investigated 2026-07-10 (result: ❌ minicap, ✅ scrcpy-server)
+
+> Historical research log from the Windows host — paths like
+> `tools/platform-tools/adb.exe`, `MSYS_NO_PATHCONV` and `C:\ffmpeg` are that
+> machine's; on macOS it is plain `adb` / `ffmpeg` from brew. The scrcpy-server
+> jar itself is resolved per host by `runner/cli/tools.py` (brew's
+> `share/scrcpy/scrcpy-server` included).
 
 Goal was a fast frame source to replace `screencap` (~0.65 s/frame over WiFi-adb).
 

@@ -15,8 +15,9 @@
 - [`device-ui-notes.md`](device-ui-notes.md) — усі нюанси UI телефона й гри (палітра, безпечні зони, баги застосунку). Нові спостереження — сюди.
 - [`rules-research.md`](rules-research.md) — правила клону monobank 2048: встановлені факти й відкриті питання, як міряємо.
 - [`edge-cases.md`](edge-cases.md) — чекліст едж-кейсів live-research зі статусами (таймер, попапи, авторизація…).
-- [`live-setup.md`](live-setup.md) — від голого Windows-хоста до бота в грі: adb, scrcpy, калібрування, скріншоти.
-- [`ops-playbook.md`](ops-playbook.md) — операційні граблі: Monitor, фонові процеси, ADB-по-WiFi, CLI/venv/тести. Читати перед живими прогонами.
+- [`live-setup.md`](live-setup.md) — від голого хоста до бота в грі: adb, scrcpy, калібрування, скріншоти (ОС-нейтрально; macOS-специфіка — нижче).
+- [`macos-setup.md`](macos-setup.md) — **runbook live-хоста Mac mini M4**: brew, venv, рушії arm64, ваги, adb-ключ, USB/WiFi, pmset/caffeinate, launchd, логи, Telegram, чекліст першої години, як читати `db latency` проти еталону i7.
+- [`ops-playbook.md`](ops-playbook.md) — операційні граблі: Monitor, фонові процеси (Windows `taskkill` / macOS `kill -TERM`), ADB-по-WiFi, CLI/venv/тести. Читати перед живими прогонами.
 - [`ops-monitoring.md`](ops-monitoring.md) — підсистема надійності живих прогонів: алерти, heartbeat, incident-бандли, escalation.
 - [`telegram-notify.md`](telegram-notify.md) — Telegram-міст (пакет `tgnotify/`): сповіщення й команди для користувача.
 - [`ondevice-vision-design.md`](ondevice-vision-design.md) — дизайн розпізнавання дошки на телефоні (22-байтний board-пакет замість повних кадрів).
