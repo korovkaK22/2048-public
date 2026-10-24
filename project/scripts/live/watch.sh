@@ -6,7 +6,7 @@
 # dead or hung. It must therefore run as a SEPARATE long-lived process (launchd
 # KeepAlive on macOS -- scripts/macos/com.bot2048.watch.plist.template).
 #
-# Usage:  scripts/watch.sh            # extra args are passed through
+# Usage:  scripts/live/watch.sh            # extra args are passed through
 #
 # Secrets: tgnotify reads ../.secrets/telegram.env itself (walk-up from cwd,
 # env vars are only a fallback), so sourcing it here is belt-and-braces for a

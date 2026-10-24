@@ -75,7 +75,7 @@ cd ../ntuple        && go vet ./... && go test ./...
 56 МБ, тому не в git:
 
 ```bash
-scripts/fetch_weights.sh      # тягне з GitHub Release, звіряє md5 і розмір
+scripts/setup/fetch_weights.sh      # тягне з GitHub Release, звіряє md5 і розмір
 ```
 
 Без ваг усе інше працює: дефолтний рушій `engine2048` не потребує файлів даних
@@ -92,7 +92,7 @@ tools/ntuple/      Go: n-tuple мережа, TD-навчання, банкір �
 ondevice-apk/      Kotlin: MediaProjection-семплер дошки на телефоні
 config/experiments/  15 конфігів батч-експериментів
 research/          одноразові дослідницькі скрипти + сирі дані (звіти — ../docs/research/)
-scripts/           setup_adb.sh, fetch_weights.sh, батч-раннери
+scripts/           по компонентах: live/ sim/ setup/ dev/ macos/ (scripts/README.md)
 data/              games.db (gitignored) + calibration.json
 ```
 
@@ -100,7 +100,7 @@ data/              games.db (gitignored) + calibration.json
 
 ## Гра на телефоні
 
-1. `scripts/setup_adb.sh` — покладе adb і scrcpy в `tools/`.
+1. `scripts/setup/setup_adb.sh` — покладе adb і scrcpy в `tools/`.
 2. [`../docs/live-setup.md`](../docs/live-setup.md) — USB-debugging, калібрування,
    `bot2048 vision calibrate`.
 3. `./.venv/Scripts/bot2048 live play --capture apk`.

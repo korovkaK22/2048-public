@@ -1,4 +1,4 @@
-"""Tests for ``scripts/experiment_runner.py`` helpers.
+"""Tests for ``scripts/sim/experiment_runner.py`` helpers.
 
 The runner is a standalone script (no package ``__init__``), so it is loaded by
 path rather than imported as a module.
@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "experiment_runner.py"
+_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "sim" / "experiment_runner.py"
 
 
 def _load_runner() -> ModuleType:

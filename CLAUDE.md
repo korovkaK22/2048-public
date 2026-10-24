@@ -21,13 +21,13 @@ Windows 10 i7 — дев-машина й резервний live-хост. Ск�
 (POSIX bash, `set -euo pipefail`, LF) — тому `project/scripts/*.sh`, не `.ps1`.
 - **macOS (Mac mini M4, 4P+6E, 16 ГБ)** — runbook `docs/macos-setup.md`. Інструменти з Homebrew
   (`/opt/homebrew/bin`: adb-cask, scrcpy, ffmpeg, go, python@3.12); venv `project/.venv/bin/python`;
-  рушії — нативні arm64 (`go build -pgo=auto`, без `GOAMD64`). Лаунчери: `scripts/live.sh`
+  рушії — нативні arm64 (`go build -pgo=auto`, без `GOAMD64`). Лаунчери: `scripts/live/live.sh`
   (ставить env рушія: `w-l0.003.bin` + record-engine, `EVAL_MLP=0`, воркери = P-ядра,
-  `caffeinate`), `scripts/watch.sh`; супервізія — `scripts/macos/install.sh` (launchd).
+  `caffeinate`), `scripts/live/watch.sh`; супервізія — `scripts/macos/install.sh` (launchd).
   Стоп — `kill -TERM` (→ `exit_reason='killed'`). Чексуми рішень ≠ amd64 (FMA) — це норма.
 - **Windows 10** — команди через Bash (Git Bash). Python 3.12 (`py -3.12`); venv `project/.venv`
   (`./.venv/Scripts/python.exe`). adb: `project/tools/platform-tools/adb.exe` (gitignored,
-  `scripts/setup_adb.sh`). Процеси вбивати `taskkill.exe //PID <WINPID> //T //F`.
+  `scripts/setup/setup_adb.sh`). Процеси вбивати `taskkill.exe //PID <WINPID> //T //F`.
 - З `project/` на будь-якому хості (`$PY` = `.venv/bin/python` або `.venv/Scripts/python.exe`):
   `$PY -m pytest`, `$PY -m ruff check src tests`, `$PY -m mypy src`, CLI — `$PY -m bot2048.cli`
   (у worktree — саме так, не `.venv/*/bot2048`: той editable з головної копії).
@@ -41,7 +41,7 @@ Windows 10 i7 — дев-машина й резервний live-хост. Ск�
 - **Формат коміт-меседжа** (щоб з `git log` орієнтуватись без діфа): subject — коротко ЩО (imperative, ≤72 симв.). Body — кількома рядками **ЩО** зроблено, **ЯК** (підхід/ключова зміна) і **ЧОМУ** (яку проблему рішає, чому саме так). Приклади в історії: `feat: fast swipe … / FAST profile default, 80ms … / ~220-340ms/move saved`.
 - **Лог експериментів**: кожен випробуваний варіант (евристика / набір ваг / depth / стратегія) → короткий запис у `docs/experiment-log.md` (config → результат → чому/висновок, найновіші зверху). Щоб не переганяти глухі кути й бачити всю історію того, що вже пробували і чим воно скінчилось.
 - **Гілки**: `feat/…`, `fix/…`, `refactor/…`, `research/…`, `docs/…`, `chore/…`. У `main` — тільки мерж зеленої гілки (ruff + mypy + pytest).
-- **Паралельна робота = git-worktree.** `project/scripts/new-worktree.sh <гілка>` → `worktrees/<гілка>/` (у `.gitignore`) з junction на спільний `project/.venv`. Прибирати ТІЛЬКИ `project/scripts/rm-worktree.sh <гілка>` (знімає junction першим; голий `git worktree remove --force`/`rm -rf` може пройти крізь junction і знести головний venv). У worktree CLI — `PYTHONPATH=src ./.venv/Scripts/python -m bot2048`, не `./.venv/Scripts/bot2048` (той editable з головної копії).
+- **Паралельна робота = git-worktree.** `project/scripts/dev/new-worktree.sh <гілка>` → `worktrees/<гілка>/` (у `.gitignore`) з junction на спільний `project/.venv`. Прибирати ТІЛЬКИ `project/scripts/dev/rm-worktree.sh <гілка>` (знімає junction першим; голий `git worktree remove --force`/`rm -rf` може пройти крізь junction і знести головний venv). У worktree CLI — `PYTHONPATH=src ./.venv/Scripts/python -m bot2048`, не `./.venv/Scripts/bot2048` (той editable з головної копії).
 - **Зони (file ownership)** — одна паралельна задача = одна зона: `vision/` · `ai/` + `tools/engine2048|ntuple` · `device/` · `runner/` · `storage/` · `sim/` + `analysis/` · `ondevice/` + `ondevice-apk/` · `tgnotify/` · `docs/`. Зачіпаєш чужу зону — це окрема гілка або узгодження.
 - **`docs/experiment-log.md`** мержиться як `merge=union` (`.gitattributes`) — записи з паралельних гілок не конфліктують; після мержу глянути, що блоки цілі.
 - **Головна сесія = оркестратор**: декомпозує, запускає агентів, приймає результати, **мержить гілки в main і пушить** пофіче.

@@ -25,7 +25,7 @@ together cover the config's whole seed range (``--allow-partial`` to opt out
 of the last one deliberately).
 
 Usage (from project/):
-    ./.venv/Scripts/python.exe scripts/experiment_merge.py \
+    ./.venv/Scripts/python.exe scripts/sim/experiment_merge.py \
         research/experiments/RUN_A research/experiments/RUN_B \
         [--label baseline] [--allow-partial] [--out research/experiments]
 

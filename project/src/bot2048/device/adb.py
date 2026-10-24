@@ -123,7 +123,7 @@ class AdbDevice:
 
         Raises:
             MissingDeviceDependencyError: ``[device]`` extra not installed.
-            DeviceError: no (or ambiguous) device; run ``scripts/setup_adb.sh``
+            DeviceError: no (or ambiguous) device; run ``scripts/setup/setup_adb.sh``
                 and check ``adb devices`` first (state must be ``device``).
         """
         adbutils = _import_adbutils()

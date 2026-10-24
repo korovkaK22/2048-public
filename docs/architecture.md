@@ -36,7 +36,7 @@ monobank-2048/
     ├── ondevice-apk/         Kotlin: MediaProjection-семплер дошки
     ├── research/             одноразові дослідницькі скрипти + їх дані
     ├── config/experiments/   конфіги батч-експериментів
-    ├── scripts/              допоміжні скрипти (setup_adb, fetch_weights, ...)
+    ├── scripts/              по компонентах: live/ sim/ setup/ dev/ macos/
     └── data/                 games.db (gitignored) + calibration.json
 ```
 
@@ -90,7 +90,7 @@ Python через `BOT2048_ENGINE2048_BIN`:
   величина — очікувана кількість ходів, що залишилася. Плюс leaf-value cache,
   режим полювання на рекорд (`record.go`, вимкнений без `BOT2048_RECORD_ENGINE=1`)
   і підкоманди `train / probe / bench / perfbench / arena`.
-  Ваги (56 МБ) **не в git** — `scripts/fetch_weights.sh`.
+  Ваги (56 МБ) **не в git** — `scripts/setup/fetch_weights.sh`.
 - У `ntuple` заборона 2048 — **теорема пошуку**, а не ваговий коефіцієнт:
   невід'ємність оцінки робить складання 2048 недосяжним для пошуку.
 

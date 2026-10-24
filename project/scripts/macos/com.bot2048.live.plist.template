@@ -22,7 +22,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>@REPO@/project/scripts/live.sh</string>
+        <string>@REPO@/project/scripts/live/live.sh</string>
         <string>play</string>
         <!-- Production args = the i7 production command (verified from its
              live DB; config/strategies/champion-live.json): expectimax FIXED

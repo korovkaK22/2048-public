@@ -40,7 +40,7 @@ project/tools/scrcpy/
 *~
 *.apk
 # Ваги n-tuple мережі + run/ рушія (багатомегабайтні блоби).
-# Чемпіонські ваги роздаються через GitHub Release — див. scripts/fetch_weights.sh
+# Чемпіонські ваги роздаються через GitHub Release — див. scripts/setup/fetch_weights.sh
 *.bin
 project/tools/ntuple/run/
 # PGO-профіль: містить абсолютні шляхи збірки, час і відбитки системних DLL.

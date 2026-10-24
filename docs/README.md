@@ -9,7 +9,7 @@
 - [`architecture.md`](architecture.md) — **головний документ**: layout, контракти модулів, схема БД, фази. Читати першим.
 - [`experiment-log.md`](experiment-log.md) — журнал «config → результат → висновок», найновіші зверху. Дописувати після кожного випробуваного варіанта (merge=union).
 - [`training-and-runs-census.md`](training-and-runs-census.md) — зведення: що натренували, скільки прогонів, швидкості, що зайшло / що закрили.
-- [`experiments.md`](experiments.md) — харнес батч-експериментів (`scripts/experiment.sh`): формат конфігу, шардинг, злиття, підпапки результатів.
+- [`experiments.md`](experiments.md) — харнес батч-експериментів (`scripts/sim/experiment.sh`): формат конфігу, шардинг, злиття, підпапки результатів.
 
 ## Телефон, гра, операції
 - [`device-ui-notes.md`](device-ui-notes.md) — усі нюанси UI телефона й гри (палітра, безпечні зони, баги застосунку). Нові спостереження — сюди.

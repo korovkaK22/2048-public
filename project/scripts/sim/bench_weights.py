@@ -7,7 +7,7 @@ records full games into the same telemetry DB (one experiment per weight set).
 It does NOT modify any source under core/ai/sim/storage — it only *uses* them.
 
 Usage (from project/):
-    ./.venv/Scripts/python.exe scripts/bench_weights.py --games 60 --depth 3 \
+    ./.venv/Scripts/python.exe scripts/sim/bench_weights.py --games 60 --depth 3 \
         --seed 1000 --db data/bench.db
 """
 
