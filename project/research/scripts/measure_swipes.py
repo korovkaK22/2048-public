@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import random
+import shutil
 import subprocess
 import sys
 import time
@@ -43,7 +44,11 @@ from bot2048.vision.states import (  # noqa: E402
     load_calibration_bundle,
 )
 
-ADB = str(Path.home() / "AppData/Local/Android/Sdk/platform-tools/adb.exe")
+# PATH first (brew / apt / winget); the Windows SDK location is only a fallback.
+ADB = shutil.which("adb") or str(
+    Path.home() / "AppData/Local/Android/Sdk/platform-tools/adb.exe"
+)
+FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
 RAW_DIR = PROJECT_ROOT / "research" / "raw"
 CAL_PATH = PROJECT_ROOT / "data" / "calibration.json"
 
@@ -119,7 +124,7 @@ def baseline_swipe(d: str, dur: int) -> None:
 class Vision:
     def __init__(self) -> None:
         self.calibration, self.anchors = load_calibration_bundle(CAL_PATH)
-        cfg = ScrcpyConfig(ffmpeg_path="C:/ffmpeg/ffmpeg.exe")
+        cfg = ScrcpyConfig(ffmpeg_path=FFMPEG)
         self.src = ScrcpySource(cfg, runner=AdbScrcpyRunner(adb_exe=ADB))
         self.src.start()
 
@@ -146,7 +151,7 @@ class Vision:
     def restart_source(self) -> None:
         """Rebuild the scrcpy pipeline (stale black frame after screen wake)."""
         self.src.close()
-        cfg = ScrcpyConfig(ffmpeg_path="C:/ffmpeg/ffmpeg.exe")
+        cfg = ScrcpyConfig(ffmpeg_path=FFMPEG)
         self.src = ScrcpySource(cfg, runner=AdbScrcpyRunner(adb_exe=ADB))
         self.src.start()
 

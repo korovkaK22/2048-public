@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import os
 import secrets
+import signal
+import threading
 import time
 import traceback
 from collections.abc import Callable, Iterator
@@ -51,14 +53,58 @@ log = structlog.get_logger(__name__)
 
 __all__ = [
     "DEFAULT_LOCK_PATH",
+    "TERMINATE_SIGNALS",
     "LockHeldError",
     "RestartLoopError",
     "RunContext",
     "RunnerLock",
     "enforce_restart_budget",
+    "install_terminate_handlers",
     "new_run_id",
     "run_session",
 ]
+
+#: Signals that mean "stop now, cleanly": launchd/systemd stop, `kill`, a
+#: closed ssh session (SIGHUP). SIGHUP does not exist on Windows; SIGTERM is
+#: accepted by ``signal.signal`` there but only ever delivered in-process.
+TERMINATE_SIGNALS: tuple[signal.Signals, ...] = tuple(
+    getattr(signal, name) for name in ("SIGTERM", "SIGHUP") if hasattr(signal, name)
+)
+
+
+def _terminate_to_interrupt(signum: int, _frame: object) -> None:
+    """Signal handler: surface the stop request as ``KeyboardInterrupt``.
+
+    Python runs signal handlers in the MAIN thread between bytecodes, so the
+    raise lands in the live loop exactly like Ctrl-C does -> :func:`run_session`
+    maps it to ``exit_reason='killed'`` and removes the heartbeat (no false
+    ``WATCHDOG_TIMEOUT`` from the watcher, no ``NULL`` exit_reason row).
+    Deliberately does nothing else: no logging inside a signal handler.
+    """
+    raise KeyboardInterrupt(signal.Signals(signum).name)
+
+
+def install_terminate_handlers() -> Callable[[], None]:
+    """Route :data:`TERMINATE_SIGNALS` to ``KeyboardInterrupt``; return a restorer.
+
+    No-op (restorer does nothing) when called off the main thread -- the
+    interpreter only allows handler installation there, and the live loop
+    always runs on it.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        return lambda: None
+    previous: dict[signal.Signals, Any] = {}
+    for sig in TERMINATE_SIGNALS:
+        try:
+            previous[sig] = signal.signal(sig, _terminate_to_interrupt)
+        except (ValueError, OSError):  # unsupported on this platform/thread
+            continue
+
+    def restore() -> None:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+    return restore
 
 DEFAULT_LOCK_PATH: Path = Path("logs") / "runner.lock"
 
@@ -211,10 +257,14 @@ def run_session(
     ``fatal:<CODE>`` + ``SystemExit(2)`` (alert/bundle already written by
     the Supervisor); KeyboardInterrupt -> ``killed``; any other exception ->
     CRASH bundle + FATAL alert + ``fatal:CRASH`` + ``SystemExit(2)``.
+    SIGTERM/SIGHUP (launchd stop, ``kill``, dropped ssh) are turned into
+    KeyboardInterrupt for the session's lifetime, so they take the ``killed``
+    path too instead of leaving a NULL exit_reason and a stale heartbeat.
     """
     run_id = new_run_id()
     alerts = AlertWriter(alerts_path)
     lock = RunnerLock(lock_path)
+    restore_signals = install_terminate_handlers()  # SIGTERM/SIGHUP -> 'killed'
     lock.acquire()
     try:
         ops = OpsRepository(db_path)  # startup REQUIRES a working DB (§7 budget)
@@ -277,3 +327,4 @@ def run_session(
             ops.close()
     finally:
         lock.release()
+        restore_signals()

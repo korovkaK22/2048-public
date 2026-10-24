@@ -16,10 +16,21 @@
 - `docs/archive/` — витіснені/виконані документи; кожен з приміткою «чому в архіві» в `docs/archive/README.md`.
 
 ## Середовище
-- Windows 10. Команди — через Bash (Git Bash); скрипти — `project/scripts/*.sh`, не `.ps1` (PowerShell-тула є, але скрипти репо мусять іти й на Linux/macOS).
-- Python 3.12 (`py -3.12`); venv: `project/.venv` (створений, dev-залежності стоять).
-- З `project/`: `./.venv/Scripts/pytest`, `./.venv/Scripts/ruff check src tests`, `./.venv/Scripts/mypy src`, CLI — `./.venv/Scripts/bot2048`.
-- adb: `project/tools/platform-tools/adb.exe` (gitignored).
+Два хости. **Live (телефон, launchd) і бектести — Mac mini M4 (macOS, arm64) — основний**;
+Windows 10 i7 — дев-машина й резервний live-хост. Скрипти репо мусять іти на обох
+(POSIX bash, `set -euo pipefail`, LF) — тому `project/scripts/*.sh`, не `.ps1`.
+- **macOS (Mac mini M4, 4P+6E, 16 ГБ)** — runbook `docs/macos-setup.md`. Інструменти з Homebrew
+  (`/opt/homebrew/bin`: adb-cask, scrcpy, ffmpeg, go, python@3.12); venv `project/.venv/bin/python`;
+  рушії — нативні arm64 (`go build -pgo=auto`, без `GOAMD64`). Лаунчери: `scripts/live.sh`
+  (ставить env рушія: `w-l0.003.bin` + record-engine, `EVAL_MLP=0`, воркери = P-ядра,
+  `caffeinate`), `scripts/watch.sh`; супервізія — `scripts/macos/install.sh` (launchd).
+  Стоп — `kill -TERM` (→ `exit_reason='killed'`). Чексуми рішень ≠ amd64 (FMA) — це норма.
+- **Windows 10** — команди через Bash (Git Bash). Python 3.12 (`py -3.12`); venv `project/.venv`
+  (`./.venv/Scripts/python.exe`). adb: `project/tools/platform-tools/adb.exe` (gitignored,
+  `scripts/setup_adb.sh`). Процеси вбивати `taskkill.exe //PID <WINPID> //T //F`.
+- З `project/` на будь-якому хості (`$PY` = `.venv/bin/python` або `.venv/Scripts/python.exe`):
+  `$PY -m pytest`, `$PY -m ruff check src tests`, `$PY -m mypy src`, CLI — `$PY -m bot2048.cli`
+  (у worktree — саме так, не `.venv/*/bot2048`: той editable з головної копії).
 - Тимчасові файли (тестові скріншоти, чернетки, одноразові дампи) — у `tmp/` в КОРЕНІ репозиторію-папки (`C:\Users\sa095\Desktop\monobank-2048\tmp\`, поза git). Не смітити в `data/` чи `project/`.
 - Docker — ТІЛЬКИ для батч-симуляцій; ADB/live — завжди на хості.
 

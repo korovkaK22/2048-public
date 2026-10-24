@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchAgent template for the LIVE RUNNER (bot2048 live play).
+  Rendered by scripts/macos/install.sh: @REPO@ -> repo root, @HOME@ -> $HOME.
+
+  Deliberately NO KeepAlive and RunAtLoad=false: a runner that auto-respawns
+  after a FATAL would swipe through a broken screen state; the restart budget
+  in runner/lifecycle.py is the only auto-restart we allow, and a human (or the
+  Telegram /start flow) decides when to kick it:
+      launchctl kickstart -k gui/$UID/com.bot2048.live
+  Stop:
+      launchctl kill TERM gui/$UID/com.bot2048.live     (-> exit_reason='killed')
+  ProcessType=Interactive keeps the runner on the P-cores at full priority
+  (audit B: no CPU affinity on macOS, this is the lever that exists).
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.bot2048.live</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>@REPO@/project/scripts/live.sh</string>
+        <string>play</string>
+        <!-- Production args = the i7 production command (verified from its
+             live DB; config/strategies/champion-live.json): expectimax FIXED
+             depth 4 (no budget-ms), prefetch on, APK capture, auto-login.
+             live.sh adds the engine env (w-l0.003.bin + record engine). -->
+        <string>--strategy</string>
+        <string>go</string>
+        <string>--depth</string>
+        <string>4</string>
+        <string>--prefetch</string>
+        <string>--capture</string>
+        <string>apk</string>
+        <string>--auto-login</string>
+        <string>--games</string>
+        <string>0</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>@REPO@/project</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- launchd gives agents a bare PATH; live.sh prepends Homebrew too,
+             but adb/go must also resolve for anything launchd runs directly. -->
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>@HOME@</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
+        <key>PYTHONUTF8</key>
+        <string>1</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <!-- SIGTERM -> this many seconds -> SIGKILL. The runner finishes the
+         current move, writes exit_reason and removes the heartbeat on TERM. -->
+    <key>ExitTimeOut</key>
+    <integer>30</integer>
+
+    <!-- Kill the whole process group on stop so the Go engine never outlives
+         the runner (it also exits on stdin EOF; this is the belt). -->
+    <key>AbandonProcessGroup</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>@REPO@/project/logs/launchd-live.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>@REPO@/project/logs/launchd-live.err.log</string>
+</dict>
+</plist>

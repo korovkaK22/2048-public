@@ -27,9 +27,13 @@ if [[ -d "$main_venv" ]]; then
     fi
 fi
 
+# Підказки з інтерпретатором цієї ОС (Windows: Scripts/, POSIX: bin/).
+py="./.venv/bin/python"
+[[ -x "$dir/project/.venv/Scripts/python.exe" ]] && py="./.venv/Scripts/python"
+
 cat <<EOF
 worktree: $dir  (branch $branch from $base)
   cd "$dir/project"
-  ./.venv/Scripts/python -m pytest
-  PYTHONPATH=src ./.venv/Scripts/python -m bot2048 --help   # НЕ ./.venv/Scripts/bot2048
+  $py -m pytest
+  PYTHONPATH=src $py -m bot2048.cli --help   # НЕ ./.venv/*/bot2048 (editable головної копії)
 EOF

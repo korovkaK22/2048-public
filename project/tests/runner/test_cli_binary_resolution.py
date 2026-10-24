@@ -125,8 +125,43 @@ def test_ffmpeg_prefers_path(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_ffmpeg_falls_back_to_plain_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli_tools.shutil, "which", lambda _n: None)
-    monkeypatch.setattr(cli_tools, "_BUNDLED_FFMPEG", Path("does") / "not" / "exist")
+    monkeypatch.setattr(cli_tools, "_BUNDLED_FFMPEG_DIR", Path("does") / "not" / "exist")
     assert cli_tools._resolve_ffmpeg_exe() == "ffmpeg"
+
+
+def test_ffmpeg_bundled_found_recursively_by_host_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No PATH ffmpeg -> the bundled one under tools/ffmpeg/<any layout>/ wins.
+
+    The Windows release zip nests it as ``<ver>/bin/ffmpeg.exe``; the lookup is
+    by the HOST's executable name, so a foreign-OS binary in the same tree is
+    ignored rather than spawned.
+    """
+    tools = tmp_path / "tools" / "ffmpeg"
+    wanted = _touch(tools / "ffmpeg-master-latest-win64-gpl" / "bin" / cli_tools._FFMPEG_NAME)
+    foreign = "ffmpeg" if cli_tools._FFMPEG_NAME.endswith(".exe") else "ffmpeg.exe"
+    _touch(tools / "other-release" / foreign)
+    monkeypatch.setattr(cli_tools.shutil, "which", lambda _n: None)
+    monkeypatch.setattr(cli_tools, "_BUNDLED_FFMPEG_DIR", tools)
+    assert cli_tools._resolve_ffmpeg_exe() == str(wanted)
+
+
+@pytest.mark.parametrize(
+    ("fake_platform", "expected_name"),
+    [("win32", "ffmpeg.exe"), ("darwin", "ffmpeg"), ("linux", "ffmpeg")],
+)
+def test_bundled_ffmpeg_name_per_platform(fake_platform: str, expected_name: str) -> None:
+    """Like adb: ``.exe`` only on Windows; the bundled DIR is OS-neutral."""
+    real = sys.platform
+    try:
+        sys.platform = fake_platform
+        reloaded = importlib.reload(cli_tools)
+        assert expected_name == reloaded._FFMPEG_NAME
+        assert Path("tools") / "ffmpeg" == reloaded._BUNDLED_FFMPEG_DIR
+    finally:
+        sys.platform = real
+        importlib.reload(cli_tools)
 
 
 # --- adb: repo-local if present, else PATH ---------------------------------
