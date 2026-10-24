@@ -342,7 +342,7 @@ def _quantile(xs: list[float], q: float) -> float:
 def _moves_stats(moves: list[int]) -> dict[str, Any]:
     """The distribution of MOVES — the metric the objective is actually in.
 
-    score = 18.2 x moves (r^2 = .998, docs/audit-2026-07-11.md §3.3), so moves
+    score = 18.2 x moves (r^2 = .998, docs/archive/audit-2026-07-11.md §3.3), so moves
     is the same signal with less noise, and the goal — one game >= 48k — is
     P(moves >= 2569). That is a TAIL, and a tail is a function of sigma exactly
     as much as of mu: an arm can win the mean and lose the objective. Reporting

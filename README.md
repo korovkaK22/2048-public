@@ -852,7 +852,7 @@ n-tuple-оцінки — і пішли будувати й тестувати с
 сирій теплокарті — артефакт того, де бот лишає порожнє місце, а не зсув
 генератора.
 
-Порівняння варіантів: [`docs/engine-adoption-research.md`](docs/engine-adoption-research.md).
+Порівняння варіантів: [`docs/research/engine-adoption-research.md`](docs/research/engine-adoption-research.md).
 Правила клону встановлені емпірично й перевірені: [`docs/rules-research.md`](docs/rules-research.md).
 
 ### 10.2. Скільки резервуарів тримати
@@ -939,7 +939,7 @@ n-tuple-оцінки — і пішли будувати й тестувати с
 а тим, **скільки підтримки взагалі вміщується під резервуарами**.
 
 Повний розбір: [`docs/tail-analysis.md`](docs/tail-analysis.md) ·
-[`docs/strategy-2026-07-11.md`](docs/strategy-2026-07-11.md) ·
+[`docs/archive/strategy-2026-07-11.md`](docs/archive/strategy-2026-07-11.md) ·
 [`docs/experiment-log.md`](docs/experiment-log.md)
 
 ### 10.3. Де тримати 1024: перебрані схеми
@@ -1075,7 +1075,10 @@ n-tuple мережа, **14 172 488 вагів ≈ 57 МБ** на чекпоін�
 
 ```
 img/                      фото стенда і скріншоти
-docs/                     документація і дослідження
+docs/                     живі доки (індекс — docs/README.md)
+  research/               дослідницькі звіти
+  archive/                витіснені документи
+  knowledge/              snapshot агентської пам'яті
 project/
   src/bot2048/
     core/        движок гри: бітборд, precomputed таблиці рядків (без I/O)
@@ -1092,7 +1095,7 @@ project/
     engine2048/  Go: базовий рушій, ручна евристика (відтворюваний baseline)
     ntuple/      Go: n-tuple мережа, TD-навчання, банкір рекорду
   ondevice-apk/  Kotlin: MediaProjection-семплер (розпізнавання на телефоні)
-  research/      дослідницькі скрипти + сирі дані до них
+  research/      дослідницькі скрипти + сирі дані (звіти — у docs/research/)
   config/        15 конфігів експериментів
 ```
 
@@ -1166,6 +1169,8 @@ python -m venv .venv                          # Python 3.12+
 
 ## 15. Документація
 
+Повний індекс з описом кожного документа: [`docs/README.md`](docs/README.md).
+
 - [`docs/architecture.md`](docs/architecture.md) — модулі, контракти, схема БД
 - [`docs/rules-research.md`](docs/rules-research.md) — правила клону і як їх встановили
 - [`docs/experiment-log.md`](docs/experiment-log.md) — 43 записи: конфіг → результат → висновок
@@ -1177,6 +1182,7 @@ python -m venv .venv                          # Python 3.12+
 - [`docs/ops-monitoring.md`](docs/ops-monitoring.md) — алерти, heartbeat, інцидент-бандли, escalation
 - [`docs/live-setup.md`](docs/live-setup.md) — телефон, ADB, калібрування
 - [`docs/device-ui-notes.md`](docs/device-ui-notes.md) — нюанси UI застосунку
+- [`docs/research/`](docs/research/) — дослідницькі звіти: латентність, свайпи, шлях до 50k, телеметрія
 - [`docs/knowledge/`](docs/knowledge/) — закриті напрямки (історичний snapshot)
 - [`docs/archive/`](docs/archive/) — витіснені документи, лишені для історії
 

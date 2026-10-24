@@ -123,7 +123,7 @@ ORDER BY experiment
 """
 
 # -- SQL 2b: per-experiment reliability (predict-gate + FACTUAL capture kind) ----
-# research/telemetry_review.md M2/M3/N6. The predict-gate outcome and the
+# docs/research/telemetry_review.md M2/M3/N6. The predict-gate outcome and the
 # FACTUAL frame source now ride in ``eval_details.move`` (written per move by
 # the live runner); the report reads the FACT instead of the configured
 # ``experiments.params_json.capture`` so a silent scrcpy->screencap fallback is
@@ -208,7 +208,7 @@ class ExperimentLatency:
     prefetch_hit_pct: float | None
     percentiles: tuple[PhaseRow, ...]
     contributions: tuple[Contribution, ...]  # ranked, largest first
-    # -- reliability (research/telemetry_review.md M2/M3/N6) -------------------
+    # -- reliability (docs/research/telemetry_review.md M2/M3/N6) -------------------
     gate_hit_pct: float | None = None  # predict-gate acceptances / gate-moves
     gate_fallback_pct: float | None = None  # predict-gate timeouts / gate-moves
     capture_kind_known: int = 0  # moves that reported a FACTUAL capture_kind

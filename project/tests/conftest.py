@@ -1,7 +1,7 @@
 """Top-level pytest config: xdist scheduling only (no fixtures).
 
 Heavy ffmpeg/subprocess/socket/timed tests starve each other for CPU when
-pytest-xdist spawns them on many workers at once (research/test_speed.md §3):
+pytest-xdist spawns them on many workers at once (docs/research/test_speed.md §3):
 8 parallel ffmpeg pipelines miss ``first_frame_timeout`` and the whole run
 gets SLOWER than serial. Pin them to ONE xdist worker via a shared
 ``xdist_group`` (honoured by ``--dist loadgroup``); everything else spreads

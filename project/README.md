@@ -5,6 +5,7 @@
 розробляти**.
 
 Архітектура і контракти модулів: [`../docs/architecture.md`](../docs/architecture.md).
+Індекс усієї документації: [`../docs/README.md`](../docs/README.md).
 
 ## Установка
 
@@ -90,7 +91,7 @@ tools/engine2048/  Go: базовий рушій, ручна евристика 
 tools/ntuple/      Go: n-tuple мережа, TD-навчання, банкір рекорду
 ondevice-apk/      Kotlin: MediaProjection-семплер дошки на телефоні
 config/experiments/  15 конфігів батч-експериментів
-research/          одноразові дослідницькі скрипти + сирі дані до них
+research/          одноразові дослідницькі скрипти + сирі дані (звіти — ../docs/research/)
 scripts/           setup_adb.sh, fetch_weights.sh, батч-раннери
 docker/            образ для батч-симуляцій
 data/              games.db (gitignored) + calibration.json

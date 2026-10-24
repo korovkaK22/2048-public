@@ -200,7 +200,7 @@ def _print_latency(report: ExperimentLatency) -> None:
         else "unknown"
     )
     capture_text = report.capture_mode if report.capture_mode is not None else "-"
-    # Prefer the FACTUAL capture kind (research/telemetry_review.md M3): the
+    # Prefer the FACTUAL capture kind (docs/research/telemetry_review.md M3): the
     # configured label stays first (so ``capture=<config>`` is always present),
     # but a silent scrcpy->screencap fallback is now spelled out.
     if report.capture_kind_known and report.capture_screencap_pct is not None:
@@ -242,7 +242,7 @@ def _print_latency(report: ExperimentLatency) -> None:
         )
     console.print(table)
 
-    # Predict-gate health (research/telemetry_review.md M2): hit% is the #1
+    # Predict-gate health (docs/research/telemetry_review.md M2): hit% is the #1
     # early-spawn metric; without it the "settle" phase mixes gate-hits and
     # legacy stable-frame settles. Printed only when the gate actually ran.
     if report.gate_hit_pct is not None:

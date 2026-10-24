@@ -4,7 +4,7 @@
 The project measures a lot and infers nothing: no confidence interval, no
 p-value, no power calculation appears anywhere in `research/experiments/`.
 Every KEEP/DROP verdict in `docs/experiment-log.md` was taken inside the noise
-(docs/strategy-2026-07-11.md §6). This is the missing half.
+(docs/archive/strategy-2026-07-11.md §6). This is the missing half.
 
 It answers four questions, in the units the project actually cares about:
 
@@ -58,7 +58,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-# 48 000 score / 18.2 score-per-move (docs/audit-2026-07-11.md §3.3).
+# 48 000 score / 18.2 score-per-move (docs/archive/audit-2026-07-11.md §3.3).
 TARGET_MOVES = 2570
 RANK_1024 = 10
 Z95, Z80 = 1.96, 0.84          # two-sided alpha=.05, power=.8

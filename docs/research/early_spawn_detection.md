@@ -3,7 +3,7 @@
 Дата: 2026-07-11. Девайс: 192.0.2.10:5555 (WiFi), 1080×2400, вільний.
 Дані: `data/games.db` (spawns: 1832 in-game записи по 7 партіях),
 3 живі скрінрекорди свайпів (native ~100 fps).
-Сирі дані/скрипти: `research/early_spawn/`.
+Сирі дані/скрипти: `project/research/early_spawn/`.
 
 ## TL;DR
 
@@ -56,7 +56,7 @@ Wilson-95 % для P(4): **[8.49 %, 11.22 %]** → класичні 10 % під�
 > Наслідок: спекулятивний prefetch «ймовірніших» клітин (напрям 4) не має на що
 > спиратися. Єдиний пріор — 90 % що це «2» (для оцінок дерева, не для перцепції).
 
-Скрипт: `research/early_spawn/scripts/` (інлайн-аналітика в raw/), дамп — нижче.
+Скрипт: `project/research/early_spawn/scripts/` (інлайн-аналітика в raw/), дамп — нижче.
 
 ---
 
@@ -64,8 +64,8 @@ Wilson-95 % для P(4): **[8.49 %, 11.22 %]** → класичні 10 % під�
 
 Метод: `adb shell screenrecord` (native fps) під час ОДНОГО свайпу; кадри через
 ffmpeg `-fps_mode passthrough`; семпл 16 каліброваних центрів/кадр; класифікація
-по палітрі. Скрипт: `research/early_spawn/scripts/analyze_anim.py`.
-Сирі кліпи: `research/early_spawn/raw/move_*.mp4`.
+по палітрі. Скрипт: `project/research/early_spawn/scripts/analyze_anim.py`.
+Сирі кліпи: `project/research/early_spawn/raw/move_*.mp4`.
 
 | Кліп | Напрям | motion_start→settle | anim_ms |
 |---|---|---|---|

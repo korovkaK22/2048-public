@@ -95,7 +95,7 @@ class TestMovesStats:
         self, runner: ModuleType
     ) -> None:
         """The reason sigma had to be reported at all: ranking by the mean picks
-        the WRONG arm (docs/audit-2026-07-11.md §3.4)."""
+        the WRONG arm (docs/archive/audit-2026-07-11.md §3.4)."""
         narrow = runner._moves_stats([1762 + d for d in (-249, 0, 249) * 20])
         wide = runner._moves_stats([1572 + d for d in (-362, 0, 362) * 20])
         assert wide["moves_mean"] < narrow["moves_mean"]

@@ -6,7 +6,7 @@
 >
 > Мотивація користувача: «як не своє генеруватимемо, то візьмемо уже існуюче».
 >
-> Читати разом із `docs/strategy-research.md` (огляд алгоритмів) і
+> Читати разом із `docs/research/strategy-research.md` (огляд алгоритмів) і
 > `docs/archive/benchmark-report.md` (наші виміряні цифри). Цей документ — НЕ про алгоритми,
 > а про **конкретні репозиторії як drop-in движки**: сила, збірка на Windows,
 > ліцензія, легкість інтеграції в наш `Strategy`-контракт.
@@ -201,4 +201,4 @@ RAM + таблиці 18 ГБ + перший запуск 25 хв — зарад�
 
 *Наші внутрішні джерела:* `project/tools/engine2048/main.go` (stdio-протокол),
 `project/src/bot2048/ai/go_engine.py` (обгортка/контракт), `docs/archive/benchmark-report.md`
-(наші виміряні цифри), `docs/strategy-research.md` (огляд алгоритмів).
+(наші виміряні цифри), `docs/research/strategy-research.md` (огляд алгоритмів).

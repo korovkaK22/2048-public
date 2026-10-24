@@ -74,5 +74,5 @@ bot2048-test .`) — native, no emulation.
 - **`COLUMNS=200`** is set in the image so headless `rich` (default 80 cols)
   doesn't truncate the CLI tables that some `sim bench` tests assert on.
 - **`GOMAXPROCS=1`** is set as the batch default (see
-  `research/arm_20core_scaling.md`); the suite spawns its own engine.
+  `docs/research/arm_20core_scaling.md`); the suite spawns its own engine.
 - Verified on x86-64: **531 passed, 17 skipped** with the default `-n auto`.
