@@ -233,6 +233,9 @@ func handleVersion() string {
 		"version",
 		"protocol=" + strconv.Itoa(engineProtocolVersion),
 		"go=" + runtime.Version(),
+		// Which engine this is: the client picks the source tree to hash (and
+		// the semantics to expect) from this key, not from the binary's path.
+		"engine=engine2048",
 		// The live search's pool width. It affects ONLY budget_ms searches (the
 		// fixed-depth path simulations use is serial whatever this says), but a
 		// live run's achieved depth depends on it, so it belongs in the record.

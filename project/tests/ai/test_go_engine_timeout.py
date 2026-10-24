@@ -101,6 +101,7 @@ def _bare_strategy() -> GoExpectimaxStrategy:
     strat._reply_q = None
     strat._reader = None
     strat._budget_ms = None
+    strat._env = None  # inherit the process environment (no explicit engine env)
     strat._binary = Path("engine")  # never launched: Popen is monkeypatched
     return strat
 

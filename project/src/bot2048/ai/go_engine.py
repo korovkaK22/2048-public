@@ -22,9 +22,9 @@ Protocol (ASCII, space-separated):
   within a sub-millisecond poll window, so it never delays a real search.
 * ``lookup <16hex>`` -> ``hit <dir> <value> <depth>`` | ``miss`` (read-only
   probe of the prefetch cache; never searches, never interrupts a prefetch).
-* ``version`` -> ``version protocol=<n> go=<ver> <FARM_KEY>=<value> ...``
+* ``version`` -> ``version protocol=<n> go=<ver> engine=<kind> <KEY>=<value> ...``
   (the farm weights the engine actually applied at startup — see
-  :func:`engine_version`).
+  :func:`engine_version`; ``engine`` is ``engine2048`` or ``ntuple``).
 * ``ping`` -> ``pong``; any error -> ``err <message>``
 
 ``<16hex>`` is 16 hex digits where digit ``j`` (leftmost = ``j = 0``) is the
@@ -46,6 +46,7 @@ import subprocess
 import threading
 import time
 import weakref
+from collections.abc import Mapping
 from pathlib import Path
 from typing import IO
 
@@ -54,10 +55,12 @@ from bot2048.core import engine
 from bot2048.core.types import Board, Direction, MoveResult
 
 __all__ = [
+    "ENGINE_KINDS",
     "GoEngineError",
     "GoExpectimaxStrategy",
     "board_to_hex",
     "engine_build_sha256",
+    "engine_kind",
     "engine_source_sha256",
     "engine_version",
     "find_engine_binary",
@@ -67,6 +70,18 @@ __all__ = [
 
 ENGINE_ENV_VAR = "BOT2048_ENGINE2048_BIN"
 _HEX_DIGITS = "0123456789abcdef"
+
+#: The Go engines this wrapper can drive, by the ``engine=`` key of their
+#: ``version`` reply; each lives in ``tools/<kind>/``.
+ENGINE_KINDS: tuple[str, ...] = ("engine2048", "ntuple")
+_DEFAULT_ENGINE_KIND = "engine2048"
+
+#: Process-environment keys that configure an engine (read once at its
+#: startup). When a caller passes an explicit ``env`` these are STRIPPED from
+#: the inherited ``os.environ`` first, so the shell is never a hidden input to
+#: a run: the spec's env is the only source of ``BOT2048_*`` / ``GOMAXPROCS``.
+_ENGINE_ENV_PREFIX = "BOT2048_"
+_ENGINE_ENV_KEYS = frozenset({"GOMAXPROCS"})
 
 #: Floor for the engine reply watchdog (seconds). Engine DEATH already raises
 #: (empty readline -> GoEngineError, recoverable), but a STALL -- a hung
@@ -88,13 +103,35 @@ class GoEngineError(RuntimeError):
     """The Go engine process died or replied with a protocol error."""
 
 
-def _tools_dir() -> Path:
-    return Path(__file__).resolve().parents[3] / "tools" / "engine2048"
+def _tools_dir(kind: str = _DEFAULT_ENGINE_KIND) -> Path:
+    """``tools/<kind>/`` of the source checkout (``engine2048`` by default)."""
+    if kind not in ENGINE_KINDS:
+        raise ValueError(f"unknown engine kind {kind!r}; expected one of {ENGINE_KINDS}")
+    return Path(__file__).resolve().parents[3] / "tools" / kind
 
 
 def _default_binary_path() -> Path:
     name = "engine2048.exe" if os.name == "nt" else "engine2048"
     return _tools_dir() / name
+
+
+def _engine_env(env: Mapping[str, str] | None) -> dict[str, str] | None:
+    """The process environment for an engine subprocess.
+
+    ``None`` -> ``None`` (inherit ``os.environ`` unchanged, today's behaviour).
+    Otherwise: ``os.environ`` minus every ``BOT2048_*`` key and ``GOMAXPROCS``,
+    plus ``env`` -- so a stale shell export can never re-tune an engine whose
+    configuration was given explicitly, while PATH/TMP/etc. still reach it.
+    """
+    if env is None:
+        return None
+    clean = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith(_ENGINE_ENV_PREFIX) and key not in _ENGINE_ENV_KEYS
+    }
+    clean.update(env)
+    return clean
 
 
 def find_engine_binary() -> Path | None:
@@ -176,8 +213,8 @@ def engine_build_sha256(binary: Path) -> str:
     return digest.hexdigest()
 
 
-def engine_source_sha256() -> str:
-    """SHA-256 over the engine's Go sources — a PORTABLE identity for its code.
+def engine_source_sha256(tools_dir: Path | None = None) -> str:
+    """SHA-256 over an engine's Go sources — a PORTABLE identity for its code.
 
     Hashes every non-test ``.go`` file plus ``go.mod`` (name + content, in a
     fixed order), so it is identical on every machine at a given commit and
@@ -185,12 +222,17 @@ def engine_source_sha256() -> str:
     "same heuristic?" answerable across an arm64 Mac and an amd64 Windows box,
     where the binaries can never match byte-for-byte.
 
+    ``tools_dir`` is the engine's source directory (``tools/engine2048`` by
+    default; ``tools/ntuple`` for the n-tuple engine -- pick it from the
+    ``engine=`` key of the ``version`` reply, see :func:`engine_kind`, so an
+    ntuple run never records engine2048's hash).
+
     It describes the CHECKOUT. The runner rebuilds any stale binary before a
     run (see :func:`resolve_engine_binary`), which is what keeps the checkout
     and the artefact that ran in agreement.
     """
     digest = hashlib.sha256()
-    tools = _tools_dir()
+    tools = _tools_dir() if tools_dir is None else Path(tools_dir)
     sources = sorted(
         (p for p in tools.glob("*.go") if not p.name.endswith("_test.go")),
         key=lambda p: p.name,
@@ -201,13 +243,46 @@ def engine_source_sha256() -> str:
     return digest.hexdigest()
 
 
-def engine_version(binary: Path | None = None) -> dict[str, str]:
+def _parse_version_reply(reply: str) -> dict[str, str]:
+    """Split a ``version k=v k=v ...`` line into a dict (raises on anything else)."""
+    fields = reply.split()
+    if not fields or fields[0] != "version":
+        raise GoEngineError(f"malformed version reply {reply!r}")
+    info: dict[str, str] = {}
+    for field in fields[1:]:
+        key, _, value = field.partition("=")
+        info[key] = value
+    return info
+
+
+def engine_kind(info: Mapping[str, str], binary: Path | None = None) -> str:
+    """Which engine a ``version`` reply came from: ``engine2048`` or ``ntuple``.
+
+    Taken from the reply's ``engine=`` key (both engines report it). For a
+    binary that predates the key, fall back to the name of the binary's parent
+    directory (``tools/<kind>/``), then to ``engine2048``.
+    """
+    kind = info.get("engine")
+    if kind in ENGINE_KINDS:
+        return kind
+    path = binary if binary is not None else Path(info.get("binary", ""))
+    parent = path.resolve().parent.name if str(path) else ""
+    return parent if parent in ENGINE_KINDS else _DEFAULT_ENGINE_KIND
+
+
+def engine_version(
+    binary: Path | None = None, *, env: Mapping[str, str] | None = None
+) -> dict[str, str]:
     """Ask the engine what it is and which farm weights it ACTUALLY applied.
 
-    Returns the parsed ``version`` reply plus ``build_sha256`` and ``binary``.
-    The weights come back from the engine *after* it has read the
-    ``BOT2048_FARM_*`` overrides, so they include every weight the config left
-    implicit — call this in the same environment the engine will run in.
+    Returns the parsed ``version`` reply plus ``binary``, ``build_sha256``,
+    ``source_sha256`` (of the RIGHT engine's sources, chosen by the reply's
+    ``engine=`` key) and ``engine`` (filled in for a binary that predates the
+    key). The weights come back from the engine *after* it has read the
+    ``BOT2048_*`` overrides, so they include every value the config left
+    implicit — pass the same ``env`` the engine will run with (``None`` =
+    inherit the current process environment, as a plain :class:`Popen` would;
+    see :func:`_engine_env`).
     """
     target = resolve_engine_binary(binary)
     proc = subprocess.run(
@@ -217,19 +292,17 @@ def engine_version(binary: Path | None = None) -> dict[str, str]:
         text=True,
         encoding="utf-8",
         timeout=60.0,
+        env=_engine_env(env),
     )
     reply = (proc.stdout or "").strip()
-    fields = reply.split()
-    if proc.returncode != 0 or not fields or fields[0] != "version":
+    if proc.returncode != 0 or not reply.startswith("version"):
         raise GoEngineError(f"engine version failed (exit {proc.returncode}): {reply!r}")
-    info: dict[str, str] = {
-        "binary": str(target),
-        "build_sha256": engine_build_sha256(target),
-        "source_sha256": engine_source_sha256(),
-    }
-    for field in fields[1:]:
-        key, _, value = field.partition("=")
-        info[key] = value
+    info = _parse_version_reply(reply)
+    kind = engine_kind(info, target)
+    info["engine"] = kind
+    info["binary"] = str(target)
+    info["build_sha256"] = engine_build_sha256(target)
+    info["source_sha256"] = engine_source_sha256(_tools_dir(kind))
     return info
 
 
@@ -257,6 +330,10 @@ class GoExpectimaxStrategy:
     subprocess is started lazily on first use and restarted automatically if
     it dies; call :meth:`close` (or use as a context manager) to shut it
     down. A single process serves one request at a time.
+
+    ``env`` is the engine process environment (``None`` inherits the caller's,
+    as before; a mapping replaces every ``BOT2048_*``/``GOMAXPROCS`` the shell
+    had, see :func:`_engine_env`). ``label`` overrides :attr:`name`.
     """
 
     def __init__(
@@ -268,6 +345,9 @@ class GoExpectimaxStrategy:
         farm: bool = False,
         budget_ms: float | None = None,
         prefetch: bool = False,
+        *,
+        env: Mapping[str, str] | None = None,
+        label: str | None = None,
     ) -> None:
         if depth < 1:
             raise ValueError("depth must be >= 1")
@@ -278,6 +358,8 @@ class GoExpectimaxStrategy:
         self._adaptive = adaptive
         self._farm = farm
         self._budget_ms = float(budget_ms) if budget_ms is not None else None
+        self._env = _engine_env(env)
+        self._label = label
         self._prefetch = prefetch
         # Adaptive speculation gate (see _maybe_speculate): EMA of the
         # caller's think-time between consecutive choose() calls, the
@@ -315,6 +397,8 @@ class GoExpectimaxStrategy:
 
     @property
     def name(self) -> str:
+        if self._label is not None:
+            return self._label
         suffix = ",farm" if self._farm else ""
         if self._budget_ms is not None:
             return f"go-expectimax(budget={self._budget_ms:g}ms{suffix})"
@@ -576,6 +660,7 @@ class GoExpectimaxStrategy:
                 text=True,
                 encoding="utf-8",
                 bufsize=1,
+                env=self._env,
             )
             self._proc = proc
             # Fresh queue + daemon reader bound to THIS process. A respawn makes
