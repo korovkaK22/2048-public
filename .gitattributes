@@ -1,6 +1,10 @@
 # Shell scripts must stay LF or they break when run on Linux/macOS.
 *.sh text eol=lf
 
+# Кожна гілка дописує свій запис нагору журналу — union-мерж бере обидва записи
+# замість конфлікту. Після мержу глянути, що блоки не перемішались.
+docs/experiment-log.md merge=union
+
 # Never line-ending-convert or try to diff these as text.
 *.bin  binary
 *.pgo  binary
