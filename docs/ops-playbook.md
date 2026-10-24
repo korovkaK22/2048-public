@@ -1,7 +1,8 @@
 # Ops playbook — дебаг і живі прогони
 
 > Практичні операційні уроки для обох хостів — Mac mini (macOS, основний live) і
-> Windows 10 / Git Bash; допоміжні скрипти — shell-скрипти в `scripts/*.sh`.
+> Windows 10 / Git Bash; допоміжні скрипти — shell-скрипти в `scripts/<компонент>/*.sh`
+> (`live/`, `sim/`, `setup/`, `dev/`, `macos/` — див. `docs/components.md`).
 > Повний macOS-runbook (brew, launchd, живлення) — `macos-setup.md`.
 > Це НЕ про правила гри (це в `device-ui-notes.md`) — це про те, як ПРАВИЛЬНО
 > запускати інструменти й живі прогони, щоб не наступати на граблі двічі.
@@ -51,14 +52,14 @@
 
 ## CLI / venv
 - Інтерпретатор venv: `.venv/bin/python` (macOS/Linux) або `.venv/Scripts/python.exe` (Windows);
-  далі `$PY`. Лаунчери `scripts/live.sh`, `watch.sh`, `tg_send.sh`, `experiment.sh`, `bench.sh`
+  далі `$PY`. Лаунчери `scripts/live/live.sh`, `watch.sh`, `tg_send.sh`, `experiment.sh`, `bench.sh`
   знаходять його самі.
 - Точка входу: `$PY -m bot2048.cli` (або `.venv/*/bot2048` — але в worktree це editable
   головної копії, тому там ТІЛЬКИ `-m bot2048.cli`).
   **НЕ** `python -m bot2048` — нема `__main__` (це пакет).
 - Живий раннер потребує device-екстри: `$PY -m pip install -e ".[device]"`
   (adbutils; opencv/pillow уже стоять). Помилка «adbutils is not installed» = не поставлені екстри.
-- Живий прод-запуск — через `scripts/live.sh` (env рушія: `w-l0.003.bin` + record-engine,
+- Живий прод-запуск — через `scripts/live/live.sh` (env рушія: `w-l0.003.bin` + record-engine,
   `EVAL_MLP=0`/воркери на arm64, `MONO_PIN`, `caffeinate`), не голим CLI — інакше рушій
   обере мережу за вмістом `tools/ntuple/run/`.
 - `vision parse|state <IMAGE>` — IMAGE позиційний, не `--image`.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Прибрати worktree, створений new-worktree.sh (гілку лишає — видаляй сам після мержу).
 #
-#   project/scripts/rm-worktree.sh feat/vision-speedup
+#   project/scripts/dev/rm-worktree.sh feat/vision-speedup
 #
 # Спершу знімаємо venv-junction ОКРЕМО: рекурсивне видалення теки з junction
 # усередині може пройти крізь нього і знести головний venv.

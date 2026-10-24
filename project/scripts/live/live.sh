@@ -3,9 +3,9 @@
 # environment, from any host (macOS primary, Linux/Windows Git Bash still work).
 #
 # Usage (from anywhere; the script cd's into project/ itself):
-#   scripts/live.sh --strategy go --depth 4 --prefetch --capture apk --auto-login --games 0
-#   scripts/live.sh once --capture apk            # dry run: one capture -> state -> decide
-#   scripts/live.sh research --games 20           # spawn-rule measurement
+#   scripts/live/live.sh --strategy go --depth 4 --prefetch --capture apk --auto-login --games 0
+#   scripts/live/live.sh once --capture apk            # dry run: one capture -> state -> decide
+#   scripts/live/live.sh research --games 20           # spawn-rule measurement
 # The first word selects the `live` sub-command (default: play); everything
 # else is passed through to the CLI untouched. The production command on the
 # i7 (verified from its live DB) was: champion net w-l0.003.bin + record
@@ -56,7 +56,7 @@ export BOT2048_ENGINE2048_BIN="$engine_bin"
 # BOT2048_NTUPLE_WEIGHTS before calling this script.
 weights="${BOT2048_NTUPLE_WEIGHTS:-$PROJECT_DIR/tools/ntuple/run/w-l0.003.bin}"
 [[ -f "$weights" ]] || die "weights not found: $weights
-  fetch them:  scripts/fetch_weights.sh"
+  fetch them:  scripts/setup/fetch_weights.sh"
 # Explicit on purpose: the arg-less engine launch probes the run/ dir by
 # filename (serve.go weightCandidates) -- whichever file happens to exist
 # would decide the net. Provenance must not depend on directory contents.

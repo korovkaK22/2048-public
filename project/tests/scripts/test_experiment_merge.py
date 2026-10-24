@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 PROJECT = Path(__file__).resolve().parents[2]
-MERGE = PROJECT / "scripts" / "experiment_merge.py"
+MERGE = PROJECT / "scripts" / "sim" / "experiment_merge.py"
 
 ENGINE = {
     "binary": "/tmp/engine2048",

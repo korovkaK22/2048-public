@@ -15,7 +15,9 @@ python -m venv .venv                          # Python 3.12+
 ./.venv/Scripts/python -m pip install -e ".[dev,device]"
 ```
 
-- `[dev]` — pytest, ruff, mypy, hypothesis.
+- `[dev]` — pytest, ruff, mypy, hypothesis, import-linter (межі компонентів).
+- `[live]` — те саме, що `[device]` (аліас для live-хоста: `pip install -e ".[live]"`);
+  extras розписані по компонентах у `docs/components.md`.
 - `[device]` — `adbutils`, `opencv-python`, `pillow`. Потрібен **і для тестів**:
   частина суїти працює зі справжніми `cv2`/`Pillow` і справжнім ffmpeg (проти
   фейкового телефона, не проти моків). Без цього extra 4 тести падають і 173
@@ -75,7 +77,7 @@ cd ../ntuple        && go vet ./... && go test ./...
 56 МБ, тому не в git:
 
 ```bash
-scripts/fetch_weights.sh      # тягне з GitHub Release, звіряє md5 і розмір
+scripts/setup/fetch_weights.sh      # тягне з GitHub Release, звіряє md5 і розмір
 ```
 
 Без ваг усе інше працює: дефолтний рушій `engine2048` не потребує файлів даних
@@ -92,34 +94,15 @@ tools/ntuple/      Go: n-tuple мережа, TD-навчання, банкір �
 ondevice-apk/      Kotlin: MediaProjection-семплер дошки на телефоні
 config/experiments/  15 конфігів батч-експериментів
 research/          одноразові дослідницькі скрипти + сирі дані (звіти — ../docs/research/)
-scripts/           setup_adb.sh, fetch_weights.sh, батч-раннери
-docker/            образ для батч-симуляцій
+scripts/           по компонентах: live/ sim/ setup/ dev/ macos/ (scripts/README.md)
 data/              games.db (gitignored) + calibration.json
 ```
 
-## Docker — тільки батч-симуляції
-
-```bash
-docker compose -f docker/compose.yaml build
-docker compose -f docker/compose.yaml run sim sim run \
-    --strategy expectimax --stop-tile 2048 --games 500 --db data/games.db
-```
-
-`./data` монтується в `/app/data`, тому результати лишаються на хості.
-
-Два образи, і вони різні:
-
-- `docker/Dockerfile` — **лише симуляції на Python**. Go-тулчейна в ньому немає,
-  тому `--strategy go-expectimax` там не запуститься.
-- `Dockerfile` (у корені `project/`) — **тестовий** образ: збирає Go-рушій під
-  архітектуру хоста і ганяє повну суїту однаково на x86-64 і arm64.
-
-Живу гру в контейнері не запускаємо: USB/ADB на Windows у контейнер не
-пробрасується, і `[device]` в sim-образ навмисно не встановлюється.
+Усе (сими, тести, live) працює нативно на хості; Docker у репозиторії немає.
 
 ## Гра на телефоні
 
-1. `scripts/setup_adb.sh` — покладе adb і scrcpy в `tools/`.
+1. `scripts/setup/setup_adb.sh` — покладе adb і scrcpy в `tools/`.
 2. [`../docs/live-setup.md`](../docs/live-setup.md) — USB-debugging, калібрування,
    `bot2048 vision calibrate`.
 3. `./.venv/Scripts/bot2048 live play --capture apk`.

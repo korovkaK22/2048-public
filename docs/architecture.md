@@ -10,36 +10,28 @@
 
 ## Layout
 
+Хто чим володіє (теки, скрипти, тести, доки, extras, CI) і як компонент
+видалити — **один** маніфест: [`components.md`](components.md). Тут лише скелет:
+
 ```
 monobank-2048/
-├── docs/                     документація і дослідження
+├── docs/                     документація (індекс — docs/README.md)
 └── project/
-    ├── pyproject.toml
-    ├── src/bot2048/
-    │   ├── core/             чистий движок гри (без I/O)
-    │   ├── ai/               стратегії + мiст до Go-рушія
-    │   ├── sim/              симулятор, телеметрія причин смерті
-    │   ├── storage/          SQLite: схема, recorder, репозиторії
-    │   ├── analysis/         статистика спавнів, ASCII-рендер дошки
-    │   ├── vision/           кадр → Board (цифри + палітра, калібрування)
-    │   ├── device/           ADB, захоплення екрана, humanizer
-    │   ├── runner/           живий цикл і research-режим
-    │   ├── ondevice/         хостова частина протоколу APK
-    │   ├── tgnotify/         Telegram-мiст (алерти, heartbeat, інциденти)
-    │   ├── logging_setup.py  structlog: JSON у logs/ + читабельна консоль
-    │   ├── recording.py      контракт подій гри (НЕ міняти без узгодження)
-    │   └── cli.py            typer-CLI `bot2048` (sim / db / vision / live)
-    ├── tests/                дзеркалить src: tests/core, tests/ai, ...
-    ├── tools/
-    │   ├── engine2048/       Go: базовий рушій (ручна евристика «farm»)
-    │   └── ntuple/           Go: n-tuple мережа, TD-навчання, банкір рекорду
-    ├── ondevice-apk/         Kotlin: MediaProjection-семплер дошки
-    ├── research/             одноразові дослідницькі скрипти + їх дані
-    ├── config/experiments/   конфіги батч-експериментів
-    ├── docker/               образ для батч-симуляцій
-    ├── scripts/              допоміжні скрипти (setup_adb, fetch_weights, ...)
+    ├── src/bot2048/          core · ai · sim · storage+analysis · vision · device ·
+    │                         runner (live) · ondevice · tgnotify · cli.py ·
+    │                         recording.py · logging_setup.py
+    ├── tests/                дзеркалить src + test_architecture.py (межі компонентів)
+    ├── tools/{engine2048,ntuple}/   Go-рушії (один stdin-протокол)
+    ├── ondevice-apk/         Kotlin-семплер (компонент ondevice)
+    ├── scripts/{live,sim,setup,dev,macos}/   скрипти по компонентах
+    ├── config/{experiments,strategies}/
+    ├── research/             одноразові скрипти + сирі дані (звіти — docs/research/)
     └── data/                 games.db (gitignored) + calibration.json
 ```
+
+Межі між підпакетами (хто кого може імпортувати) задані контрактами
+`[tool.importlinter]` у `pyproject.toml` і перевіряються `pytest`; граф —
+`scripts/dev/import_graph.py`.
 
 ## Незмінні контракти
 
@@ -85,13 +77,13 @@ Python через `BOT2048_ENGINE2048_BIN`:
 - **`engine2048`** — дефолтний. Бітборд + expectimax з відсіканням за
   накопиченою ймовірністю (`cprob`), transposition table, і ручна евристика
   «farm» з 18 ваговими коефіцієнтами, які налаштовуються через env. Не потребує
-  жодних файлів даних — самодостатній відтворюваний baseline (саме його збирає Docker).
+  жодних файлів даних — самодостатній відтворюваний baseline.
 - **`ntuple`** — сильніший. Оцінна функція — **n-tuple мережа** (8 × 6-tuple,
   база 11, 8 симетрій, 14.2 млн ваг), навчена TD-методом на afterstates; цільова
   величина — очікувана кількість ходів, що залишилася. Плюс leaf-value cache,
   режим полювання на рекорд (`record.go`, вимкнений без `BOT2048_RECORD_ENGINE=1`)
   і підкоманди `train / probe / bench / perfbench / arena`.
-  Ваги (56 МБ) **не в git** — `scripts/fetch_weights.sh`.
+  Ваги (56 МБ) **не в git** — `scripts/setup/fetch_weights.sh`.
 - У `ntuple` заборона 2048 — **теорема пошуку**, а не ваговий коефіцієнт:
   невід'ємність оцінки робить складання 2048 недосяжним для пошуку.
 
@@ -223,8 +215,8 @@ Telegram-мiст: алерти, heartbeat, інцидент-бандли. Тіл
 ## Рішення (обґрунтування)
 - **SQLite, не Postgres**: нуль інфраструктури, мільйони рядків ок, повний
   replay через знімки дошки на кожному ply.
-- **Docker лише для симуляцій**: USB/ADB у контейнер на Windows не пробрасується;
-  живий шар завжди на хості.
+- **Без Docker**: і live, і батч-симуляції йдуть нативно на хості (Mac mini /
+  Windows); контейнерний шар прибрано 2026-10 як невикористовуваний.
 - **Спершу expectimax, згодом навчена мережа.** Expectimax був швидшим шляхом до
   сильної гри й лишився відтворюваним baseline. Але сильнішим виявився саме
   RL-підхід: n-tuple мережа, навчена TD, дала +185 ходів медіани (p < 0.001) і

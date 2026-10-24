@@ -1,6 +1,6 @@
 """``bot2048 live`` sub-app: live play and spawn research on a real phone.
 
-Commands (host only, never Docker; see docs/live-setup.md):
+Commands (host only; see docs/live-setup.md):
 
 * ``bot2048 live play``     -- the real loop under the full lifecycle guard
   (run_id + lock + restart budget + heartbeat + Telegram bridge).
@@ -45,7 +45,7 @@ from bot2048.runner.cli.strategy import _make_strategy
 app = typer.Typer(
     name="live",
     no_args_is_help=True,
-    help="Live Android player (host only, never Docker).",
+    help="Live Android player (host only).",
 )
 
 # Explicit registration (rather than ``@app.command()`` inside each module)

@@ -11,11 +11,11 @@
 #   3. both Go engines built NATIVELY for arm64 with `go build -pgo=auto`
 #      (default.pgo is gitignored and x86-generated -- regenerate per BUILD.md;
 #      without it -pgo=auto is a no-op, which is fine for a first run)
-#   4. scripts/fetch_weights.sh (w-l0.003.bin = live net, champion-wall-snap-0316.bin)
+#   4. scripts/setup/fetch_weights.sh (w-l0.003.bin = live net, champion-wall-snap-0316.bin)
 #   5. prints the pmset / caffeinate / launchd commands -- it never runs sudo.
 #
 # After this: docs/macos-setup.md "first run" checklist (adb key, adb devices,
-# `scripts/live.sh once`, `scripts/macos/install.sh`).
+# `scripts/live/live.sh once`, `scripts/macos/install.sh`).
 set -euo pipefail
 
 [[ "$(uname -s)" == "Darwin" ]] || { echo "error: this script is for macOS" >&2; exit 1; }
@@ -95,7 +95,7 @@ command -v go >/dev/null 2>&1 || { echo "error: go not on PATH (brew install go)
 # --- 4. weights ----------------------------------------------------------------
 if [[ $do_weights -eq 1 ]]; then
     step "n-tuple weights"
-    scripts/fetch_weights.sh || echo "warning: fetch_weights.sh reported a problem -- see above (live.sh refuses to start without run/w-l0.003.bin)"
+    scripts/setup/fetch_weights.sh || echo "warning: fetch_weights.sh reported a problem -- see above (live.sh refuses to start without run/w-l0.003.bin)"
 fi
 
 # --- 5. power / launchd guidance (printed, never executed) ---------------------
@@ -113,6 +113,6 @@ cat <<'EOF'
   adb devices                          # must show the phone as "device"
 
   # first dry run, then the LaunchAgents:
-  scripts/live.sh once --capture apk
+  scripts/live/live.sh once --capture apk
   scripts/macos/install.sh
 EOF

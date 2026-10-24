@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Нова гілка + git-worktree у worktrees/<branch> зі спільним venv головної копії.
 #
-#   project/scripts/new-worktree.sh feat/vision-speedup        # від main
-#   project/scripts/new-worktree.sh fix/x some-base-branch
+#   project/scripts/dev/new-worktree.sh feat/vision-speedup        # від main
+#   project/scripts/dev/new-worktree.sh fix/x some-base-branch
 #
 # Прибрати після мержу:  git worktree remove worktrees/<dir> && git branch -d <branch>
 set -euo pipefail

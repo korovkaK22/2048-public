@@ -5,7 +5,7 @@
 #   macOS with Homebrew  : `brew install --cask android-platform-tools` +
 #                          `brew install scrcpy`. ONE adb on the box (audit A6):
 #                          nothing is downloaded into tools/, the CLI resolves
-#                          both from PATH (scripts/live.sh puts brew on PATH).
+#                          both from PATH (scripts/live/live.sh puts brew on PATH).
 #   everything else      : downloads into project/tools/ (gitignored):
 #                          * Android platform-tools (adb) -- official Google zip
 #                            for this OS
@@ -13,7 +13,7 @@
 #                            OS/arch (win64 | macos-aarch64/x86_64 | linux-x86_64)
 # then verifies `adb version` and prints USB-debugging instructions.
 #
-# Usage:  scripts/setup_adb.sh [--force]
+# Usage:  scripts/setup/setup_adb.sh [--force]
 #   --force  re-download even if the tools are already present (no-op for brew)
 
 set -euo pipefail
@@ -27,7 +27,7 @@ elif [[ -n "${1:-}" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"   # scripts/setup/ -> project/
 TOOLS_DIR="$PROJECT_ROOT/tools"
 
 # --- per-OS selection ------------------------------------------------------------

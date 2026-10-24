@@ -6,8 +6,7 @@ The primary live host is the Mac mini — its end-to-end runbook (brew, launchd,
 power, adb key copy, first-hour checklist) is `macos-setup.md`; this file is
 the OS-neutral part.
 
-Live play ALWAYS runs on the host. Docker is only for batch simulations
-(see `project/docker/compose.yaml`).
+Live play ALWAYS runs on the host (there is no container layer in this repo).
 
 Paths below use `$PY` for the venv interpreter: `.venv/bin/python` on
 macOS/Linux, `.venv/Scripts/python.exe` on Windows (Git Bash). `adb` means the
@@ -18,7 +17,7 @@ the one on PATH (Homebrew on macOS). Prefer ONE adb per machine.
 
 ```bash
 cd project
-scripts/setup_adb.sh          # idempotent; --force to re-download
+scripts/setup/setup_adb.sh          # idempotent; --force to re-download
 ```
 
 Branches on `uname -s`: on macOS with Homebrew it installs the
@@ -105,9 +104,9 @@ record engine, `EVAL_MLP`/workers per host, `MONO_PIN` from `.secrets/`,
 `caffeinate` on macOS — then execs the CLI):
 
 ```bash
-scripts/live.sh --strategy go --depth 4 --prefetch --capture apk --auto-login --games 1
-scripts/live.sh once --capture apk          # dry run: one capture -> state -> decide
-scripts/live.sh research --games 20         # spawn-rule measurement
+scripts/live/live.sh --strategy go --depth 4 --prefetch --capture apk --auto-login --games 1
+scripts/live/live.sh once --capture apk          # dry run: one capture -> state -> decide
+scripts/live/live.sh research --games 20         # spawn-rule measurement
 ```
 
 Bare CLI (no engine env; the Python expectimax, fine for smoke tests):
@@ -155,7 +154,7 @@ The scrcpy **GUI client** (`scrcpy.exe` v4.0) segfaults on this Windows host rig
 after "Recording started" — ignore it; we drive the **server** directly, which is
 what the Python client will do too.
 
-Recipe (server jar comes from `scripts/setup_adb.sh` → `tools/scrcpy/scrcpy-server`,
+Recipe (server jar comes from `scripts/setup/setup_adb.sh` → `tools/scrcpy/scrcpy-server`,
 this repo verified with scrcpy **v4.0**):
 
 ```bash

@@ -12,7 +12,7 @@
 #
 # The bot runs without them for sims: the default engine (tools/engine2048)
 # needs no weight file, and the ntuple Go tests skip themselves when a net is
-# absent. scripts/live.sh REQUIRES w-l0.003.bin (or whatever
+# absent. scripts/live/live.sh REQUIRES w-l0.003.bin (or whatever
 # BOT2048_NTUPLE_WEIGHTS points at) and pins it explicitly, because an
 # arg-less engine launch picks the net by probing run/ for filenames
 # (serve.go weightCandidates) -- provenance must not depend on dir contents.
@@ -29,12 +29,12 @@
 # (copy project/tools/ntuple/run/w-l0.003.bin from the Windows box).
 #
 # Usage (from project/):
-#   scripts/fetch_weights.sh
-#   BOT2048_WEIGHTS_BASE_URL=https://host/dir scripts/fetch_weights.sh
+#   scripts/setup/fetch_weights.sh
+#   BOT2048_WEIGHTS_BASE_URL=https://host/dir scripts/setup/fetch_weights.sh
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-dest_dir="$script_dir/../tools/ntuple/run"
+dest_dir="$script_dir/../../tools/ntuple/run"   # scripts/setup/ -> project/tools/ntuple/run
 
 # name | md5 (or "-" = unpinned) | size (or "-" = unpinned, >= MIN_PLAUSIBLE) | required|optional
 # Both are "required" on a live host; the field stays so a future asset can be
@@ -169,11 +169,11 @@ done
 echo
 if [ "$failed_required" -ne 0 ]; then
     echo "FAILED: a required net is missing (see errors above)." >&2
-    echo "        scripts/live.sh refuses to start without run/w-l0.003.bin." >&2
+    echo "        scripts/live/live.sh refuses to start without run/w-l0.003.bin." >&2
     exit 1
 fi
 if [ "${#missing_optional[@]}" -gt 0 ]; then
     echo "WARNING: optional asset(s) not fetched: ${missing_optional[*]} (see notes above)."
 fi
-echo "Live (champion-live):  BOT2048_NTUPLE_WEIGHTS=$dest_dir/w-l0.003.bin  (default in scripts/live.sh)"
-echo "Wall net (wall-record): BOT2048_NTUPLE_WEIGHTS=$dest_dir/champion-wall-snap-0316.bin scripts/live.sh ..."
+echo "Live (champion-live):  BOT2048_NTUPLE_WEIGHTS=$dest_dir/w-l0.003.bin  (default in scripts/live/live.sh)"
+echo "Wall net (wall-record): BOT2048_NTUPLE_WEIGHTS=$dest_dir/champion-wall-snap-0316.bin scripts/live/live.sh ..."

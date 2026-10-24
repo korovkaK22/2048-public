@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared host bootstrap for the live launchers (scripts/live.sh, scripts/watch.sh).
+# Shared host bootstrap for the live launchers (scripts/live/live.sh, scripts/live/watch.sh).
 # SOURCED, not executed:  source "$(dirname "$0")/_host_env.sh"
 #
 # On source it:
@@ -47,7 +47,7 @@ source_secrets() {
 }
 
 _host_scripts_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$_host_scripts_dir/.." || die "cannot cd to project/"
+cd "$_host_scripts_dir/../.." || die "cannot cd to project/"   # scripts/live/ -> project/
 unset _host_scripts_dir
 
 # Absolute project/ path in a form the *native* interpreter understands: on

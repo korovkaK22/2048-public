@@ -26,14 +26,14 @@ profile, disjoint seed shards) into one combined summary.
 It does NOT modify anything under core/ai/sim/storage — it only *uses*
 ``bot2048.sim.runner.play_game`` (the exact same simulator the CLI uses) and
 ``bot2048.ai.go_engine.GoExpectimaxStrategy`` (farm mode), exactly like
-``scripts/bench_weights.py`` drives the Python engine.
+``scripts/sim/bench_weights.py`` drives the Python engine.
 
 Usage (from project/):
-    ./.venv/Scripts/python.exe scripts/experiment_runner.py CONFIG.json \
+    ./.venv/Scripts/python.exe scripts/sim/experiment_runner.py CONFIG.json \
         [--machine m4pro|m4|windows|LABEL] [--workers N] [--shard IDX/COUNT] \
         [--engine-bin PATH] [--record-db] [--out DIR]
 
-Prefer the thin wrapper ``scripts/experiment.sh CONFIG.json ...`` which just
+Prefer the thin wrapper ``scripts/sim/experiment.sh CONFIG.json ...`` which just
 picks the venv interpreter for you.
 """
 
@@ -597,7 +597,7 @@ def _write_summary_md(
         "```",
         "",
         "> Portable: this folder is self-contained. Zip it, move it, and merge",
-        "> with other shards of the same profile via `scripts/experiment_merge.py`.",
+        "> with other shards of the same profile via `scripts/sim/experiment_merge.py`.",
         "",
     ]
     path.write_text("\n".join(lines), encoding="utf-8")

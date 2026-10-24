@@ -145,7 +145,7 @@ class AdbScrcpyRunner:
 
     ASSUMPTION to satisfy before live bring-up: the
     scrcpy-server jar matching ``ScrcpyConfig.server_version`` is already
-    pushed to ``ScrcpyConfig.server_path`` (``scripts/setup_adb.sh`` +
+    pushed to ``ScrcpyConfig.server_path`` (``scripts/setup/setup_adb.sh`` +
     ``adb push tools/scrcpy/scrcpy-server /data/local/tmp/scrcpy-server``,
     verified with scrcpy v4.0). This class installs nothing.
 

@@ -10,12 +10,23 @@ dependencies = [
     "rich>=13.7",
 ]
 
+# Extras are per component (docs/components.md). The default install is the
+# host-less part of the system: core + storage + ai + sim + vision + tgnotify
+# (tgnotify is stdlib-only on purpose). Nothing below changes that set.
 [project.optional-dependencies]
+# component `device` -- talking to a real phone (ADB, frame decode, PIL).
 device = [
     "adbutils>=2.8",
     "opencv-python>=4.9",
     "pillow>=10.3",
 ]
+# component `live` -- the live runner. Its only third-party needs ARE the
+# device extras; the alias exists so a live host installs `.[live]` and the
+# removal recipe for `live` has one line to drop here.
+live = [
+    "bot2048[device]",
+]
+# component `ci`/tooling -- lint, type-check, test, architecture contracts.
 dev = [
     "pytest>=8.2",
     "pytest-cov>=5.0",
@@ -23,6 +34,7 @@ dev = [
     "hypothesis>=6.100",
     "ruff>=0.5",
     "mypy>=1.10",
+    "import-linter>=2.1",
 ]
 
 [project.scripts]
@@ -53,6 +65,98 @@ python_version = "3.12"
 strict = true
 warn_unreachable = true
 mypy_path = "src"
+
+# ---------------------------------------------------------------------------
+# Component boundaries (docs/components.md). Enforced by tests/test_architecture.py
+# (so plain `pytest` and CI fail on a violation) and runnable by hand:
+#     $PY -m importlinter.cli lint-imports   # or: lint-imports
+# Edges were derived from scripts/dev/import_graph.py, not from the directory
+# tree; re-run it before touching a contract.
+# ---------------------------------------------------------------------------
+[tool.importlinter]
+root_package = "bot2048"
+include_external_packages = false
+
+# Layers: a module may import anything BELOW its line, never above. `|` =
+# independent siblings (must not import each other), `:` = siblings that may.
+[[tool.importlinter.contracts]]
+name = "component layers"
+type = "layers"
+layers = [
+    "bot2048.cli",
+    "bot2048.runner",
+    "bot2048.device",
+    "bot2048.ondevice",
+    "bot2048.sim | bot2048.vision | bot2048.tgnotify",
+    "bot2048.ai",
+    "bot2048.storage : bot2048.analysis",
+    "bot2048.recording | bot2048.logging_setup",
+    "bot2048.core",
+]
+# DEBT (component `device` -> `live`): device/supervisor.py is the live-run FSM
+# (ERROR/FATAL escalation, incident bundles, ops DB) and imports runner.*.
+# Everything else in device/ is a phone driver that knows nothing about the
+# runner. Fix = move supervisor.py into runner/ (nine importers + tests);
+# until then the three edges are whitelisted here so they cannot grow
+# (`from bot2048.runner import incidents` resolves to runner.incidents).
+ignore_imports = [
+    "bot2048.device.supervisor -> bot2048.runner.alerts",
+    "bot2048.device.supervisor -> bot2048.runner.escalation",
+    "bot2048.device.supervisor -> bot2048.runner.incidents",
+]
+
+# Leaf components: what each one is ALLOWED to import is the manifest's
+# "allowed internal deps"; everything else in bot2048 is forbidden here so a
+# component can be deleted without pulling anything but `core` with it.
+[[tool.importlinter.contracts]]
+name = "tgnotify is stdlib-only and imports nothing from bot2048"
+type = "forbidden"
+source_modules = ["bot2048.tgnotify"]
+forbidden_modules = [
+    "bot2048.core", "bot2048.recording", "bot2048.logging_setup",
+    "bot2048.storage", "bot2048.analysis", "bot2048.ai", "bot2048.sim",
+    "bot2048.vision", "bot2048.ondevice", "bot2048.device", "bot2048.runner",
+    "bot2048.cli",
+]
+
+[[tool.importlinter.contracts]]
+name = "ai and vision depend on core only"
+type = "forbidden"
+source_modules = ["bot2048.ai", "bot2048.vision"]
+forbidden_modules = [
+    "bot2048.recording", "bot2048.logging_setup", "bot2048.storage",
+    "bot2048.analysis", "bot2048.sim", "bot2048.tgnotify", "bot2048.ondevice",
+    "bot2048.device", "bot2048.runner", "bot2048.cli",
+]
+
+[[tool.importlinter.contracts]]
+name = "ondevice depends on core and vision only"
+type = "forbidden"
+source_modules = ["bot2048.ondevice"]
+forbidden_modules = [
+    "bot2048.recording", "bot2048.logging_setup", "bot2048.storage",
+    "bot2048.analysis", "bot2048.ai", "bot2048.sim", "bot2048.tgnotify",
+    "bot2048.device", "bot2048.runner", "bot2048.cli",
+]
+
+[[tool.importlinter.contracts]]
+name = "sim knows no phone: core, recording, storage/analysis, ai only"
+type = "forbidden"
+source_modules = ["bot2048.sim"]
+forbidden_modules = [
+    "bot2048.logging_setup", "bot2048.vision", "bot2048.tgnotify",
+    "bot2048.ondevice", "bot2048.device", "bot2048.runner", "bot2048.cli",
+]
+
+[[tool.importlinter.contracts]]
+name = "storage/analysis sit on core+recording only"
+type = "forbidden"
+source_modules = ["bot2048.storage", "bot2048.analysis"]
+forbidden_modules = [
+    "bot2048.logging_setup", "bot2048.ai", "bot2048.sim", "bot2048.vision",
+    "bot2048.tgnotify", "bot2048.ondevice", "bot2048.device", "bot2048.runner",
+    "bot2048.cli",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

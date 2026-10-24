@@ -6,8 +6,8 @@
 |---|---|---|
 | `setup.sh` | ідемпотентний бутстрап хоста: brew-пакети (`android-platform-tools` cask, `scrcpy`, `ffmpeg`, `go`, `python@3.12`), `project/.venv` + `pip install -e ".[dev,device]"`, нативна збірка обох Go-рушіїв (`go build -pgo=auto`), `fetch_weights.sh`; наприкінці **друкує** (не виконує) команди `pmset`/adb-ключ/launchd | `scripts/macos/setup.sh [--no-brew] [--no-weights] [--uv]` (з `project/`) |
 | `install.sh` | рендерить шаблони plist (`@REPO@`, `@HOME@`) у `~/Library/LaunchAgents/` і робить `launchctl bootstrap` + `enable`. Вотчер стартує одразу; раннер лише завантажується — стартувати руками. `--render DIR` — тільки рендер (працює на будь-якій ОС, це тест) | `scripts/macos/install.sh` · `--uninstall` · `--render /tmp/x` |
-| `com.bot2048.live.plist.template` | LaunchAgent раннера: `/bin/bash scripts/live.sh play <args>`, `ProcessType=Interactive`, **без** `KeepAlive`, `RunAtLoad=false`, `ExitTimeOut=30`. CLI-аргументи прод-команди — у масиві `ProgramArguments`, правити там | — |
-| `com.bot2048.watch.plist.template` | LaunchAgent вотчера Telegram: `scripts/watch.sh`, `KeepAlive=true`, `ProcessType=Background`, `ThrottleInterval=30` | — |
+| `com.bot2048.live.plist.template` | LaunchAgent раннера: `/bin/bash scripts/live/live.sh play <args>`, `ProcessType=Interactive`, **без** `KeepAlive`, `RunAtLoad=false`, `ExitTimeOut=30`. CLI-аргументи прод-команди — у масиві `ProgramArguments`, правити там | — |
+| `com.bot2048.watch.plist.template` | LaunchAgent вотчера Telegram: `scripts/live/watch.sh`, `KeepAlive=true`, `ProcessType=Background`, `ThrottleInterval=30` | — |
 
 ## Керування
 

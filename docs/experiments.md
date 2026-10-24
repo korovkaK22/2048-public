@@ -12,7 +12,7 @@
 
 ```bash
 cd project
-scripts/experiment.sh config/experiments/baseline.json --machine windows
+scripts/sim/experiment.sh config/experiments/baseline.json --machine windows
 # → research/experiments/baseline__windows__shard0of1__<ts>/summary.md
 ```
 
@@ -110,10 +110,10 @@ JSON (без нових залежностей; коментарі — у пол
 
 ```bash
 # M4 Pro, повний профіль на 200 сідів:
-scripts/experiment.sh config/experiments/jackpot.json --machine m4pro
+scripts/sim/experiment.sh config/experiments/jackpot.json --machine m4pro
 
 # те саме, але явно 10 воркерів (напр. паралельно з іншою роботою):
-scripts/experiment.sh config/experiments/jackpot.json --machine m4pro --workers 10
+scripts/sim/experiment.sh config/experiments/jackpot.json --machine m4pro --workers 10
 ```
 
 ---
@@ -128,18 +128,18 @@ scripts/experiment.sh config/experiments/jackpot.json --machine m4pro --workers 
 ```bash
 # --- на MacBook M4 Pro (перша половина сідів 1000..1099): ---
 cd project
-scripts/experiment.sh config/experiments/baseline.json --machine m4pro --shard 0/2
+scripts/sim/experiment.sh config/experiments/baseline.json --machine m4pro --shard 0/2
 
 # --- на Windows-машині (друга половина 1100..1199): ---
 cd project
-scripts/experiment.sh config/experiments/baseline.json --machine windows --shard 1/2
+scripts/sim/experiment.sh config/experiments/baseline.json --machine windows --shard 1/2
 ```
 
 Обидва пишуть у свій `research/experiments/<run-id>/`. Переносиш windows-підпапку
 на Mac (або обидві в одне місце — див. §6) і зливаєш:
 
 ```bash
-scripts/experiment_merge.py \
+scripts/sim/experiment_merge.py \
     research/experiments/baseline__m4pro__shard0of2__<ts> \
     research/experiments/baseline__windows__shard1of2__<ts>
 # → research/experiments/baseline__merged__<ts>/summary.md  (спільні агрегати)
@@ -223,8 +223,7 @@ per-game дані для власного аналізу/графіків; `perf
 
 > Як підняти харнес на швидкій багатоядерній машині-помічниці (напр. MacBook
 > M4 Pro, arm64) і ганяти там ті самі профілі. Команди — по порядку; все
-> нативно на хості (ADB/Docker для цього не потрібні; Docker — лише
-> альтернатива для збірки движка).
+> нативно на хості (ADB для цього не потрібен).
 
 ### 7.1 Клон і Python-середовище
 
@@ -253,19 +252,10 @@ cd ../..
 Резолвер движка сам знайде `tools/engine2048/engine2048` на POSIX
 (`--engine-bin` не потрібен). Farm — рантайм-прапор того самого бінаря.
 
-**Альтернатива — через Docker** (якщо Go на хості не хочеш ставити):
-```bash
-# з project/: збере arm64-движок у stage 1 і випече образ (нативно, без QEMU)
-docker build -t bot2048 .
-# витягнути бінар з образу на хост, щоб ганяти харнес нативно:
-id=$(docker create bot2048); docker cp "$id":/app/tools/engine2048/engine2048 \
-    tools/engine2048/engine2048; docker rm "$id"
-```
-
 ### 7.3 Санітарний прогін (механіка)
 
 ```bash
-scripts/experiment.sh config/experiments/smoke.json --machine m4pro
+scripts/sim/experiment.sh config/experiments/smoke.json --machine m4pro
 ls research/experiments/                         # має з'явитись smoke__m4pro__shard0of1__<ts>/
 cat research/experiments/smoke__m4pro__*/summary.md
 ```
@@ -276,14 +266,14 @@ cat research/experiments/smoke__m4pro__*/summary.md
 
 ```bash
 # повний профіль на 200 парних сідів, 13 воркерів:
-scripts/experiment.sh config/experiments/jackpot.json --machine m4pro
+scripts/sim/experiment.sh config/experiments/jackpot.json --machine m4pro
 # результат: research/experiments/jackpot__m4pro__shard0of1__<ts>/
 ```
 
 Порівняти три профілі (парні сіди — усі три конфіги мають однакові base/count):
 ```bash
 for p in baseline jackpot snake-heavy; do
-    scripts/experiment.sh config/experiments/$p.json --machine m4pro
+    scripts/sim/experiment.sh config/experiments/$p.json --machine m4pro
 done
 ```
 
@@ -336,11 +326,11 @@ windows (усі 6 воркерів, рівний `wall_s`); на M4 — 12 во�
 cd project
 
 # --- ТУТ, на Windows-машині: ---
-scripts/experiment.sh config/experiments/benchmark.json --machine windows
+scripts/sim/experiment.sh config/experiments/benchmark.json --machine windows
 # → research/experiments/benchmark__windows__shard0of1__<ts>/perf.json
 
 # --- на MacBook M4 Pro (arm64): ---
-scripts/experiment.sh config/experiments/benchmark.json --machine m4pro
+scripts/sim/experiment.sh config/experiments/benchmark.json --machine m4pro
 # → research/experiments/benchmark__m4pro__shard0of1__<ts>/perf.json
 ```
 

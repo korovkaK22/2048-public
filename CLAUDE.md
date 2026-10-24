@@ -6,6 +6,7 @@
 - `docs/production-state.md` — що реально грає в проді (мережа, глибина, record engine), результати, висновок про стелю. Читати перед будь-якою зміною стратегії.
 - `docs/README.md` — **індекс усіх доків** (по рядку «що там / коли читати»). Новий док — додати туди.
 - `docs/architecture.md` — **головний документ**: layout, контракти модулів, схема БД, фази. Читати першим.
+- `docs/components.md` — **маніфест компонентів**: граф імпортів, шари, для кожного компонента — шляхи, входи, залежності, хто від нього залежить і **рецепт видалення**. Межі тримає `tests/test_architecture.py` (import-linter). Читати перед тим, як чіпати структуру чи щось видаляти.
 - `docs/device-ui-notes.md` — усі нюанси UI телефона і гри (палітра, безпечні зони, баги застосунку). Нові спостереження про телефон/гру писати ТУДИ.
 - `docs/live-setup.md` — підключення телефона, ADB, зняття скріншотів.
 - `docs/rules-research.md` — відкриті питання про правила клону і як їх міряємо.
@@ -21,18 +22,18 @@ Windows 10 i7 — дев-машина й резервний live-хост. Ск�
 (POSIX bash, `set -euo pipefail`, LF) — тому `project/scripts/*.sh`, не `.ps1`.
 - **macOS (Mac mini M4, 4P+6E, 16 ГБ)** — runbook `docs/macos-setup.md`. Інструменти з Homebrew
   (`/opt/homebrew/bin`: adb-cask, scrcpy, ffmpeg, go, python@3.12); venv `project/.venv/bin/python`;
-  рушії — нативні arm64 (`go build -pgo=auto`, без `GOAMD64`). Лаунчери: `scripts/live.sh`
+  рушії — нативні arm64 (`go build -pgo=auto`, без `GOAMD64`). Лаунчери: `scripts/live/live.sh`
   (ставить env рушія: `w-l0.003.bin` + record-engine, `EVAL_MLP=0`, воркери = P-ядра,
-  `caffeinate`), `scripts/watch.sh`; супервізія — `scripts/macos/install.sh` (launchd).
+  `caffeinate`), `scripts/live/watch.sh`; супервізія — `scripts/macos/install.sh` (launchd).
   Стоп — `kill -TERM` (→ `exit_reason='killed'`). Чексуми рішень ≠ amd64 (FMA) — це норма.
 - **Windows 10** — команди через Bash (Git Bash). Python 3.12 (`py -3.12`); venv `project/.venv`
   (`./.venv/Scripts/python.exe`). adb: `project/tools/platform-tools/adb.exe` (gitignored,
-  `scripts/setup_adb.sh`). Процеси вбивати `taskkill.exe //PID <WINPID> //T //F`.
+  `scripts/setup/setup_adb.sh`). Процеси вбивати `taskkill.exe //PID <WINPID> //T //F`.
 - З `project/` на будь-якому хості (`$PY` = `.venv/bin/python` або `.venv/Scripts/python.exe`):
   `$PY -m pytest`, `$PY -m ruff check src tests`, `$PY -m mypy src`, CLI — `$PY -m bot2048.cli`
   (у worktree — саме так, не `.venv/*/bot2048`: той editable з головної копії).
 - Тимчасові файли (тестові скріншоти, чернетки, одноразові дампи) — у `tmp/` в КОРЕНІ репозиторію-папки (`C:\Users\sa095\Desktop\monobank-2048\tmp\`, поза git). Не смітити в `data/` чи `project/`.
-- Docker — ТІЛЬКИ для батч-симуляцій; ADB/live — завжди на хості.
+- Docker у проєкті немає (прибрано 2026-10): і live, і батч-симуляції — нативно на хості.
 
 ## Git та робочий процес
 - **Репозиторій**: git у КОРЕНІ (`C:\Users\sa095\Desktop\monobank-2048`), `origin` → https://github.com/korovkaK22/monobank-2048.
@@ -41,7 +42,8 @@ Windows 10 i7 — дев-машина й резервний live-хост. Ск�
 - **Формат коміт-меседжа** (щоб з `git log` орієнтуватись без діфа): subject — коротко ЩО (imperative, ≤72 симв.). Body — кількома рядками **ЩО** зроблено, **ЯК** (підхід/ключова зміна) і **ЧОМУ** (яку проблему рішає, чому саме так). Приклади в історії: `feat: fast swipe … / FAST profile default, 80ms … / ~220-340ms/move saved`.
 - **Лог експериментів**: кожен випробуваний варіант (евристика / набір ваг / depth / стратегія) → короткий запис у `docs/experiment-log.md` (config → результат → чому/висновок, найновіші зверху). Щоб не переганяти глухі кути й бачити всю історію того, що вже пробували і чим воно скінчилось.
 - **Гілки**: `feat/…`, `fix/…`, `refactor/…`, `research/…`, `docs/…`, `chore/…`. У `main` — тільки мерж зеленої гілки (ruff + mypy + pytest).
-- **Паралельна робота = git-worktree.** `project/scripts/new-worktree.sh <гілка>` → `worktrees/<гілка>/` (у `.gitignore`) з junction на спільний `project/.venv`. Прибирати ТІЛЬКИ `project/scripts/rm-worktree.sh <гілка>` (знімає junction першим; голий `git worktree remove --force`/`rm -rf` може пройти крізь junction і знести головний venv). У worktree CLI — `PYTHONPATH=src ./.venv/Scripts/python -m bot2048`, не `./.venv/Scripts/bot2048` (той editable з головної копії).
+- **Паралельна робота = git-worktree.** `project/scripts/dev/new-worktree.sh <гілка>` → `worktrees/<гілка>/` (у `.gitignore`) з junction на спільний `project/.venv`. Прибирати ТІЛЬКИ `project/scripts/dev/rm-worktree.sh <гілка>` (знімає junction першим; голий `git worktree remove --force`/`rm -rf` може пройти крізь junction і знести головний venv). У worktree CLI — `PYTHONPATH=src ./.venv/Scripts/python -m bot2048`, не `./.venv/Scripts/bot2048` (той editable з головної копії).
+- **Новий компонент = нова тека + запис у `docs/components.md` + контракт import-linter** (`pyproject.toml → [tool.importlinter]`). Нічого «поруч» в чужій теці; скрипти — у `project/scripts/<компонент>/`. `pytest` падає на імпорті через межу.
 - **Зони (file ownership)** — одна паралельна задача = одна зона: `vision/` · `ai/` + `tools/engine2048|ntuple` · `device/` · `runner/` · `storage/` · `sim/` + `analysis/` · `ondevice/` + `ondevice-apk/` · `tgnotify/` · `docs/`. Зачіпаєш чужу зону — це окрема гілка або узгодження.
 - **`docs/experiment-log.md`** мержиться як `merge=union` (`.gitattributes`) — записи з паралельних гілок не конфліктують; після мержу глянути, що блоки цілі.
 - **Головна сесія = оркестратор**: декомпозує, запускає агентів, приймає результати, **мержить гілки в main і пушить** пофіче.

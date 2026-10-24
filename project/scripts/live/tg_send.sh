@@ -4,7 +4,7 @@
 # the outbox and the token hygiene (token lives only inside TgConfig, never in
 # argv, never printed; errors are reported without the URL).
 #
-#   scripts/tg_send.sh "текст" [шлях_до_фото]
+#   scripts/live/tg_send.sh "текст" [шлях_до_фото]
 #
 # Secrets: ../.secrets/telegram.env (TG_BOT_TOKEN, TG_CHAT_ID), found by the
 # module's own walk-up from project/. Exit 0 -- sent, 1 -- failure/no config.

@@ -17,7 +17,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>@REPO@/project/scripts/watch.sh</string>
+        <string>@REPO@/project/scripts/live/watch.sh</string>
     </array>
 
     <key>WorkingDirectory</key>

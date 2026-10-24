@@ -30,7 +30,7 @@
 (той самий хід на M4 і на i7, з поправкою на FMA — §12); для Mac mini головні метрики —
 пропускна здатність спроб і аптайм, не сила пошуку. Альтернативи:
 `wall-record.json` (wall-мережа `champion-wall-snap-0316.bin`), `champion-l0003.json`
-(record off). `scripts/live.sh` виставляє саме champion-live через env (тимчасово, доки
+(record off). `scripts/live/live.sh` виставляє саме champion-live через env (тимчасово, доки
 live-CLI не читає StrategySpec напряму).
 
 ## 1. Передумови
@@ -56,13 +56,13 @@ scripts/macos/setup.sh            # [--no-brew] [--no-weights] [--uv]
 Що робить (ідемпотентно; кожен крок пропускається, якщо вже є):
 
 1. `brew install --cask android-platform-tools` (adb), `brew install scrcpy ffmpeg go python@3.12`.
-   **Не** запускати поруч `scripts/setup_adb.sh` з завантаженням у `tools/` — два adb
+   **Не** запускати поруч `scripts/setup/setup_adb.sh` з завантаженням у `tools/` — два adb
    воюють за сервер (на macOS з brew `setup_adb.sh` і сам іде через brew).
 2. `project/.venv` на `python3.12` + `pip install -e ".[dev,device]"` (з `--uv` — через `uv`).
 3. Обидва Go-рушії **нативно**: `go build -pgo=auto -o engine2048 .` і `-o ntuple .`
    (без `GOAMD64`). `default.pgo` у `.gitignore` і згенерований на x86 — без нього
    `-pgo=auto` просто no-op; перегенерувати на M4 за `BUILD.md`.
-4. `scripts/fetch_weights.sh` — обидві мережі в `tools/ntuple/run/` (§3).
+4. `scripts/setup/fetch_weights.sh` — обидві мережі в `tools/ntuple/run/` (§3).
 5. Друкує (не виконує) команди `pmset`, копіювання adb-ключа, перший запуск.
 
 Ручна перевірка після: `adb version`, `scrcpy --version`, `ffmpeg -version | head -1`,
@@ -71,7 +71,7 @@ scripts/macos/setup.sh            # [--no-brew] [--no-weights] [--uv]
 ## 3. Ваги
 
 ```bash
-scripts/fetch_weights.sh
+scripts/setup/fetch_weights.sh
 ```
 
 - `w-l0.003.bin` — **live-мережа** (чемпіон). Без закріпленої md5 — перевіряється як
@@ -141,8 +141,8 @@ scripts/macos/install.sh          # рендерить шаблони -> ~/Libra
 
 | агент | що | політика |
 |---|---|---|
-| `com.bot2048.watch` | `scripts/watch.sh` → `tgnotify watch` | `KeepAlive`, `ProcessType=Background`, стартує одразу |
-| `com.bot2048.live` | `scripts/live.sh play --strategy go --depth 4 --prefetch --capture apk --auto-login --games 0` | `ProcessType=Interactive`, **без** `KeepAlive`, `RunAtLoad=false` — стартує людина |
+| `com.bot2048.watch` | `scripts/live/watch.sh` → `tgnotify watch` | `KeepAlive`, `ProcessType=Background`, стартує одразу |
+| `com.bot2048.live` | `scripts/live/live.sh play --strategy go --depth 4 --prefetch --capture apk --auto-login --games 0` | `ProcessType=Interactive`, **без** `KeepAlive`, `RunAtLoad=false` — стартує людина |
 
 ```bash
 launchctl kickstart -k gui/$UID/com.bot2048.live     # старт/рестарт раннера
@@ -175,7 +175,7 @@ launchd — `logs/launchd-{live,watch}.{out,err}.log`. Ротація через
   у plist — страховка.
 - На macOS нема CPU-affinity. Раннер — `ProcessType=Interactive`; **усе інше** на цій
   машині під час live — `taskpolicy -c utility <cmd>` або `taskpolicy -b` (E-ядра).
-- Бектести: `scripts/experiment.sh config/... --machine m4` (8 воркерів, GOMAXPROCS=1).
+- Бектести: `scripts/sim/experiment.sh config/... --machine m4` (8 воркерів, GOMAXPROCS=1).
   **Поруч із live** — не більше 4 воркерів під `taskpolicy -b`, або взагалі не ганяти.
 - Пам'ять: live-рушій ≈ 0.3–0.5 ГБ; 16 ГБ не обмеження, крім `EXACT_NODES` у десятки млн.
 
@@ -183,8 +183,8 @@ launchd — `logs/launchd-{live,watch}.{out,err}.log`. Ротація через
 
 brew-Python має нормальні CA-сертифікати; **python.org-збірка** дає
 `CERTIFICATE_VERIFY_FAILED` в `urllib` (`tgnotify`) — не використовувати (audit A8).
-Перевірка: `scripts/tg_send.sh "mac mini online"` → «відправлено». Вотчер —
-`scripts/watch.sh` (або launchd `com.bot2048.watch`); `/status`, `/pause`, `/resume` з
+Перевірка: `scripts/live/tg_send.sh "mac mini online"` → «відправлено». Вотчер —
+`scripts/live/watch.sh` (або launchd `com.bot2048.watch`); `/status`, `/pause`, `/resume` з
 Telegram працюють через `control/pause.flag` і `logs/` у `project/` (cwd-relative).
 
 ## 9. Де що лежить (cwd = `project/`)
@@ -198,11 +198,11 @@ Telegram працюють через `control/pause.flag` і `logs/` у `project
 1. `scripts/macos/setup.sh` → без помилок; `go version` = `darwin/arm64`.
 2. `.secrets/` скопійовано, `~/.android/adbkey*` скопійовано, `adb devices` → `device`.
 3. `adb shell pm list packages | grep bot2048` — семплер стоїть; `adb shell ps -A | grep sampler`.
-4. `scripts/live.sh once --capture apk` — один кадр → стан → рішення; у виводі `version`
+4. `scripts/live/live.sh once --capture apk` — один кадр → стан → рішення; у виводі `version`
    рушія має бути `NTUPLE_WEIGHTS=…/w-l0.003.bin`, `BOT2048_RECORD_ENGINE=1`.
-5. Одна партія в терміналі (не launchd): `scripts/live.sh --strategy go --depth 4 --prefetch --capture apk --auto-login --games 1`.
+5. Одна партія в терміналі (не launchd): `scripts/live/live.sh --strategy go --depth 4 --prefetch --capture apk --auto-login --games 1`.
 6. `.venv/bin/python -m bot2048.cli db latency --experiment live` — порівняти з i7 (§11).
-7. `scripts/tg_send.sh "test"` → повідомлення прийшло.
+7. `scripts/live/tg_send.sh "test"` → повідомлення прийшло.
 8. `sudo pmset …` (§5), автооновлення off.
 9. `scripts/macos/install.sh` → вотчер піднявся (`launchctl print gui/$UID/com.bot2048.watch`).
 10. `launchctl kickstart -k gui/$UID/com.bot2048.live` → `tail -f logs/launchd-live.err.log`;

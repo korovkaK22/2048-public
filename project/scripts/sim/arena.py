@@ -33,14 +33,14 @@ buy ~nothing once two arms' boards diverge; kept as an option, not a default.
 See the report accompanying this script.
 
 Usage (from project/):
-    .venv/bin/python scripts/arena.py run ARMS.json --seeds 1000:100 --out DIR
-    .venv/bin/python scripts/arena.py stats DIR [DIR ...]
-    .venv/bin/python scripts/arena.py compare DIR --base baseline
-    .venv/bin/python scripts/arena.py corr CHEAP_DIR EXPENSIVE_DIR
-    .venv/bin/python scripts/arena.py plan --sd 300
+    .venv/bin/python scripts/sim/arena.py run ARMS.json --seeds 1000:100 --out DIR
+    .venv/bin/python scripts/sim/arena.py stats DIR [DIR ...]
+    .venv/bin/python scripts/sim/arena.py compare DIR --base baseline
+    .venv/bin/python scripts/sim/arena.py corr CHEAP_DIR EXPENSIVE_DIR
+    .venv/bin/python scripts/sim/arena.py plan --sd 300
 
 DIR may be an arena output dir (arm-*.jsonl) OR one or more run folders
-written by scripts/experiment_runner.py (config.json + results.jsonl) — so it
+written by scripts/sim/experiment_runner.py (config.json + results.jsonl) — so it
 works on everything already in research/experiments/.
 """
 
