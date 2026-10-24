@@ -15,7 +15,9 @@ python -m venv .venv                          # Python 3.12+
 ./.venv/Scripts/python -m pip install -e ".[dev,device]"
 ```
 
-- `[dev]` — pytest, ruff, mypy, hypothesis.
+- `[dev]` — pytest, ruff, mypy, hypothesis, import-linter (межі компонентів).
+- `[live]` — те саме, що `[device]` (аліас для live-хоста: `pip install -e ".[live]"`);
+  extras розписані по компонентах у `docs/components.md`.
 - `[device]` — `adbutils`, `opencv-python`, `pillow`. Потрібен **і для тестів**:
   частина суїти працює зі справжніми `cv2`/`Pillow` і справжнім ffmpeg (проти
   фейкового телефона, не проти моків). Без цього extra 4 тести падають і 173

@@ -20,6 +20,12 @@ device = [
     "opencv-python>=4.9",
     "pillow>=10.3",
 ]
+# component `live` -- the live runner. Its only third-party needs ARE the
+# device extras; the alias exists so a live host installs `.[live]` and the
+# removal recipe for `live` has one line to drop here.
+live = [
+    "bot2048[device]",
+]
 # component `ci`/tooling -- lint, type-check, test, architecture contracts.
 dev = [
     "pytest>=8.2",
