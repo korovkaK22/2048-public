@@ -58,6 +58,7 @@ from bot2048.vision.parser import (
 
 __all__ = [
     "GAME_OVER_POPUP_ANCHOR_SETS",
+    "SYNC_OVERLAY_ANCHORS",
     "WIN_POPUP_ANCHOR_SETS",
     "AnchorSpec",
     "ScreenState",
@@ -127,6 +128,34 @@ GAME_OVER_POPUP_ANCHOR_SETS: tuple[tuple[str, ...], ...] = (
     ("game_over_card_tall", "game_over_btn_left_tall", "game_over_btn_right_tall"),
 )
 
+#: Anchors of the «Синхронізація… Очікуємо дані для наступного раунду» overlay
+#: (:data:`ScreenState.SYNC_OVERLAY`): the app dims the WHOLE game screen and
+#: draws a card with that text and a semi-transparent light-gray «Вийти»
+#: button over the board. ALL anchors must match (fail-open like the popups: a
+#: calibration without them never emits the state and the frame falls through
+#: to the board branch, where the dimmed board measures ~0.44..0.69 ->
+#: NOT_IN_GAME, exactly as before). The overlay ships in two vertical layouts
+#: (the text wraps to 2 or 3 lines, shifting the card ~60 px), so the anchors
+#: sit on the button row the two layouts SHARE (y~1370) and in the board's
+#: COLUMN GAPS (x~338 / 540 / 748): the button is translucent and takes the
+#: color of the tile beneath it everywhere except over the dark gaps, where it
+#: measures a stable (142,141,144) in every captured frame -- while on any
+#: real board those gaps are dark (~19,14,30), on the win/game-over/confirm
+#: cards they are white/sky/teal. The fourth anchor is the dimmed gap just
+#: LEFT of the button's edge (x~312): dark on the overlay, so a uniformly
+#: gray screen (a system dialog / a loading surface) cannot spoof the set.
+#: Measured on 7 i7 incident frames + 3 game-screen frames (distance 0 on all
+#: ten); no other frame on record (457 checked) matches even two of the three
+#: gray anchors. Seen live 2026-07-11..13: the overlay is a transient
+#: server-sync wait (network), the right reaction is to WAIT for it to clear,
+#: not to FATAL (docs/device-ui-notes.md).
+SYNC_OVERLAY_ANCHORS: tuple[str, ...] = (
+    "sync_btn_left",
+    "sync_btn_center",
+    "sync_btn_right",
+    "sync_gap_left",
+)
+
 
 def load_calibration_bundle(path: Path) -> tuple[Calibration, StateAnchors]:
     """Load ``calibration.json`` including the ``state_anchors`` section.
@@ -156,6 +185,11 @@ class ScreenState(Enum):
     CONFIRM_NEW_GAME = "confirm_new_game"  # "start a new game?" confirmation popup
     GAME_OVER_POPUP = "game_over_popup"  # «Гру завершено» card (hint only; see module docs)
     WIN_POPUP_2048 = "win_popup_2048"  # «Ви зібрали 2048!» win popup (terminal: won game)
+    # «Синхронізація…» server-sync overlay dimming the board: a TRANSIENT
+    # network wait (seen 15 s .. minutes live). Not a popup to tap and not a
+    # foreign screen -- the board underneath is the live game; the safe
+    # reaction is to wait and re-probe until it clears (never tap «Вийти»).
+    SYNC_OVERLAY = "sync_overlay"
     AUTH_REQUIRED = "auth_required"  # monobank re-login wall; not detected yet
     NOT_IN_GAME = "not_in_game"  # screen is on, but no board and no known popup
     SCREEN_OFF = "screen_off"  # black frame -> wake needed
@@ -304,14 +338,15 @@ def detect_state(
     2. white/sky card + orange «Нова гра» btn  -> ``WIN_POPUP_2048``
     3. teal card + gray «Нова гра» button      -> ``GAME_OVER_POPUP``
     4. blue confirm button + white close "x"   -> ``CONFIRM_NEW_GAME``
-    5. board-consistent cells + "New game" btn -> ``GAME``
-    6. board-consistent, button missing        -> ``UNKNOWN`` (partial overlay?)
-    7. anything else                           -> ``NOT_IN_GAME``
+    5. gray «Вийти» button over the board gaps -> ``SYNC_OVERLAY``
+    6. board-consistent cells + "New game" btn -> ``GAME``
+    7. board-consistent, button missing        -> ``UNKNOWN`` (partial overlay?)
+    8. anything else                           -> ``NOT_IN_GAME``
 
-    Both popup branches (2, 3) are checked BEFORE the board so a popup
+    The popup/overlay branches (2-5) are checked BEFORE the board so a popup
     covering the grid is never parsed as a board. ``AUTH_REQUIRED`` is
     defined but not yet detectable (no measured anchors -- see module docs);
-    it falls into branches 6/7, which the supervisor treats conservatively.
+    it falls into branches 7/8, which the supervisor treats conservatively.
     """
     # 1. screen off: cheap downsampled luminance.
     lum = float(image[::16, ::16, :3].mean())
@@ -358,7 +393,21 @@ def detect_state(
             ScreenState.CONFIRM_NEW_GAME, "confirm_yes + popup_close anchors", 0.0
         )
 
-    # 5/6. board present?
+    # 5. «Синхронізація…» sync overlay: the translucent «Вийти» button over all
+    #    three board column gaps (see SYNC_OVERLAY_ANCHORS). Checked before the
+    #    board because the dimmed board underneath still half-matches
+    #    (0.44..0.69) and used to classify as NOT_IN_GAME -> FATAL on a live,
+    #    healthy game (incidents 20260711T204021Z, 20260712T192946Z,
+    #    20260712T193021Z, 20260713T071357Z). Anchors are optional (fail-open).
+    sync_specs = [anchors.anchors.get(name) for name in SYNC_OVERLAY_ANCHORS]
+    if all(spec is not None and spec.matches(image) for spec in sync_specs):
+        return StateDetection(
+            ScreenState.SYNC_OVERLAY,
+            f"sync anchors ({' + '.join(SYNC_OVERLAY_ANCHORS)})",
+            0.0,
+        )
+
+    # 6/7. board present?
     frac = _board_match_fraction(image, calibration, anchors.cell_match_tol)
     if frac >= anchors.board_match_min_frac:
         if anchors.anchors["new_game_btn"].matches(image):
@@ -375,5 +424,5 @@ def detect_state(
             ScreenState.UNKNOWN, f"board {frac:.0%} but new_game_btn missing", frac
         )
 
-    # 7. lit screen, no board, no known popup.
+    # 8. lit screen, no board, no known popup.
     return StateDetection(ScreenState.NOT_IN_GAME, f"board only {frac:.0%}", frac)

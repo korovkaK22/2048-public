@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pytest
@@ -14,6 +15,8 @@ import bot2048.vision.parser as parser_module
 from bot2048.vision.calibration import Calibration
 from bot2048.vision.glyphs import GlyphStore
 from bot2048.vision.parser import (
+    COLOR_SETTLED_MAX_DIST,
+    UNKNOWN_COLOR_MAX_DIST,
     BoardParseError,
     cell_crop,
     cell_half_size,
@@ -119,6 +122,108 @@ def test_unknown_tile_color_lenient_reads_exponent_zero(
     assert reads[5].method == "unknown"
     assert all(r.method != "unknown" for i, r in enumerate(reads) if i != 5)
     assert parse_board(frame, calib, lenient=True) == (0,) * 16
+
+
+def _blend(
+    calib: Calibration, exponent: int, alpha: float, *, row: int = 1
+) -> tuple[int, int, int]:
+    """Palette color of ``exponent`` faded in over the row-``row`` empty bg."""
+    empties = [rgb for rgb, exp in calib.palette if exp == 0]
+    tile = next(rgb for rgb, exp in calib.palette if exp == exponent)
+    bg = empties[row]
+    return cast(
+        "tuple[int, int, int]",
+        tuple(round(bg[i] + alpha * (tile[i] - bg[i])) for i in range(3)),
+    )
+
+
+def _paint_cell(frame: Image, calib: Calibration, cell: int, rgb: tuple[int, int, int]) -> None:
+    cx, cy = calib.cell_centers[cell]
+    half = cell_half_size(calib) + 10
+    frame[cy - half : cy + half, cx - half : cx + half] = rgb
+
+
+@pytest.mark.parametrize("exponent", [1, 2, 3, 4, 5])
+def test_fading_tile_never_reads_as_a_different_tile(
+    exponent: int, paint_board: Callable[[Sequence[int]], Image], calib: Calibration
+) -> None:
+    """A tile fading in from the empty background reads as 0 or ITSELF, never
+    as another tile.
+
+    Root cause of 9 i7 games aborted VISION_MISMATCH (incidents
+    20260711T172703Z, 20260711T193507Z, 20260711T202717Z, 20260712T120359Z,
+    20260712T150912Z, 20260712T151359Z, 20260712T191712Z, 20260712T223052Z,
+    20260713T063933Z): the spawn of the PREVIOUS move was committed as a "2"
+    while the real tile was a "4". A 4 (70,71,109) fading in over the
+    (21,21,36) background passes within ~12 RGB of the "2" entry (58,58,72)
+    at alpha ~0.6 -- close enough for the color-only snap, too dark for the
+    digit mask -- and the first frame/packet that equals prediction + a legal
+    2/4 spawn is accepted. Color-only reads now require a SETTLED face
+    (COLOR_SETTLED_MAX_DIST), so such a frame reads exponent 0 ("unsettled")
+    and the gate simply waits for the next one.
+    """
+    for k in range(0, 41):
+        alpha = k / 40
+        frame = paint_board((0,) * 16).copy()
+        _paint_cell(frame, calib, 5, _blend(calib, exponent, alpha))
+        read = parse_board_detailed(frame, calib, lenient=True)[5]
+        assert read.exponent in (0, exponent), (
+            f"exp {exponent} at alpha {alpha:.3f} read as {read.exponent} "
+            f"({read.method}, dist {read.color_distance:.1f})"
+        )
+        if read.exponent == exponent:
+            assert read.method == "color"
+            assert read.color_distance <= COLOR_SETTLED_MAX_DIST
+    settled = parse_board_detailed(frame, calib, lenient=True)[5]  # alpha 1.0
+    assert settled.exponent == exponent
+    assert settled.method == "color"
+
+
+def test_fading_4_dips_near_the_2_entry_but_stays_unsettled(
+    paint_board: Callable[[Sequence[int]], Image], calib: Calibration
+) -> None:
+    """Pins the measured geometry behind COLOR_SETTLED_MAX_DIST: the 4-tile
+    fade path's nearest entry IS the "2" for a while (alpha ~0.4..0.75), at a
+    distance that stays above the settled gate but below the unknown gate."""
+    frame = paint_board((0,) * 16).copy()
+    _paint_cell(frame, calib, 5, _blend(calib, 2, 0.6))
+    read = parse_board_detailed(frame, calib, lenient=True)[5]
+    assert read.color_exponent == 1  # nearest palette color is the "2"
+    assert COLOR_SETTLED_MAX_DIST < read.color_distance < UNKNOWN_COLOR_MAX_DIST
+    assert read.method == "unsettled"
+    assert read.exponent == 0
+    assert read.confidence == 0.0
+    assert read.digits is None
+
+
+def test_unsettled_color_strict_raises(
+    paint_board: Callable[[Sequence[int]], Image], calib: Calibration
+) -> None:
+    """Strict mode fails loudly on an unsettled face instead of guessing."""
+    frame = paint_board((0,) * 16).copy()
+    _paint_cell(frame, calib, 5, _blend(calib, 2, 0.6))
+    with pytest.raises(BoardParseError, match="unsettled"):
+        parse_board(frame, calib)
+    # the unknown gate still owns colors far from EVERY entry
+    _paint_cell(frame, calib, 5, (0, 255, 0))
+    with pytest.raises(BoardParseError, match="unknown tile"):
+        parse_board(frame, calib)
+
+
+def test_settled_gate_has_headroom_over_real_faces(
+    load_image: Callable[[str], Image], calib: Calibration
+) -> None:
+    """Every settled tile face on the real fixtures sits well inside the
+    settled gate (measured max 3.7 on 149 i7 frames), so the gate can only
+    ever reject animation/dimming, never a real settled read."""
+    worst = 0.0
+    for name in ("board_256.png", "board_a.png", "board_fresh.png", "game_over_before.png"):
+        # lenient: game_over_before.png holds 1024 tiles the reference
+        # palette does not know (read by digits, color_distance is meaningless)
+        for read in parse_board_detailed(load_image(name), calib, lenient=True):
+            if read.method == "color" or (read.method == "digits" and read.exponent < 9):
+                worst = max(worst, read.color_distance)
+    assert 0.0 < worst < COLOR_SETTLED_MAX_DIST / 2
 
 
 def test_incident_frame_reads_both_128s_by_digits(calib: Calibration) -> None:

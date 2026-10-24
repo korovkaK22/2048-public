@@ -20,6 +20,15 @@ Decision per cell (see :func:`read_cell`):
 * digits unreadable (occluded by the cat / partially animated) but the
   background matches a non-empty palette color -> tile (method ``color``,
   logged as a fallback).
+* digits unreadable and the background is NEAR a palette entry but not ON
+  it (farther than :data:`COLOR_SETTLED_MAX_DIST`) -> the cell is
+  UNSETTLED: a tile mid fade-in / mid-merge, or a dimmed screen. Strict
+  mode raises; lenient mode yields ``method="unsettled"``, exponent 0, so
+  the live gate skips the frame and re-captures instead of committing a
+  wrong value. A 4-tile fading in from the empty background passes within
+  ~12 RGB of the palette "2" (alpha ~0.6) -- read as a settled 2 it
+  silently corrupts the tracked board (i7 run, 9 games aborted
+  VISION_MISMATCH one move later; docs/device-ui-notes.md).
 * digits unreadable AND the background is far from every palette entry
   -> :class:`BoardParseError`. The parser fails LOUDLY instead of guessing:
   the live loop re-screenshots on parse errors, and a persistent error
@@ -48,6 +57,7 @@ from bot2048.vision.calibration import DEFAULT_CALIBRATION_PATH, Calibration, Pa
 from bot2048.vision.glyphs import GlyphStore, NumberRead, read_number, white_mask
 
 __all__ = [
+    "COLOR_SETTLED_MAX_DIST",
     "DEFAULT_PATCH_RADIUS",
     "LEARN_MIN_SEPARATION",
     "UNKNOWN_COLOR_MAX_DIST",
@@ -86,6 +96,17 @@ CROP_HALF_FRACTION: float = 0.37
 #: ~3 of their palette entry, the closest WRONG entry is > 25 away.
 UNKNOWN_COLOR_MAX_DIST: float = 60.0
 
+#: A color-only read (digits unreadable) is trusted only when the background
+#: sits within this RGB distance of its palette entry -- a SETTLED tile face.
+#: Measured on 149 real i7 frames (~1 700 digit-confirmed cells): settled
+#: faces are <= 3.7 from their entry. Beyond this and below
+#: :data:`UNKNOWN_COLOR_MAX_DIST` the cell is mid-animation or dimmed: a tile
+#: fading in from the empty background sweeps through the palette line, and
+#: the 4-tile path comes within 11.7..12.9 of the "2" entry (alpha ~0.6) --
+#: the color-only snap then reads a settled "2" for a tile that is really a
+#: 4. 8.0 leaves ~2x headroom over settled faces and ~1.5x below that dip.
+COLOR_SETTLED_MAX_DIST: float = 8.0
+
 #: :func:`learn_tile_color` refuses a sample closer (RGB Euclidean) than
 #: this to a palette entry of a DIFFERENT exponent: settled tile faces sit
 #: within ~3 of their own entry and the closest WRONG entry is > 25 away
@@ -95,10 +116,14 @@ UNKNOWN_COLOR_MAX_DIST: float = 60.0
 #: duplicate and the calibration is returned unchanged.
 LEARN_MIN_SEPARATION: float = 12.0
 
-#: Method that decided a cell (see module docstring). ``"unknown"`` only
-#: appears in lenient mode: digits unreadable AND the background color is
-#: farther than :data:`UNKNOWN_COLOR_MAX_DIST` from every palette entry.
-CellMethod = Literal["digits", "color", "empty", "unknown"]
+#: Method that decided a cell (see module docstring). ``"unknown"`` and
+#: ``"unsettled"`` only appear in lenient mode (strict mode raises instead):
+#: ``"unknown"`` -- digits unreadable AND the background color is farther than
+#: :data:`UNKNOWN_COLOR_MAX_DIST` from every palette entry; ``"unsettled"`` --
+#: digits unreadable and the background is between :data:`COLOR_SETTLED_MAX_DIST`
+#: and that gate (mid-animation / dimmed frame). Both read as exponent 0 with
+#: confidence 0.0; consumers treat every non-``"digits"`` method as suspect.
+CellMethod = Literal["digits", "color", "empty", "unknown", "unsettled"]
 
 #: ``(cell index, digit text)`` pairs the ``vision.cell.color_disagrees``
 #: warning already fired for. The first occurrence per pair logs at WARNING,
@@ -248,7 +273,10 @@ def read_cell(
     background farther than :data:`UNKNOWN_COLOR_MAX_DIST` from every
     palette entry) does not raise; it yields ``method="unknown"``,
     ``exponent=0``, ``confidence=0.0`` so callers (the live runner) can
-    keep parsing and auto-learn the tile instead of aborting.
+    keep parsing and auto-learn the tile instead of aborting. Likewise an
+    UNSETTLED cell (digits unreadable, background farther than
+    :data:`COLOR_SETTLED_MAX_DIST` from its nearest entry) yields
+    ``method="unsettled"``, exponent 0 -- never the nearest color's value.
     """
     crop = cell_crop(image, center, half)
     background = tile_background_color(crop)
@@ -311,6 +339,37 @@ def read_cell(
             "palette entry -- unknown tile; extend the glyph store / palette "
             "(`bot2048 vision add-glyphs` / `bot2048 vision calibrate`)"
         )
+    if color_dist > COLOR_SETTLED_MAX_DIST:
+        # Near a palette entry but not on it: a tile mid fade-in / mid-merge
+        # or a dimmed frame. Snapping to the nearest color here is exactly
+        # how a fading 4 was committed as a 2 (see COLOR_SETTLED_MAX_DIST).
+        if lenient:
+            # DEBUG: the live predict-gate polls every ~50 ms through an
+            # animation, so this fires on normal frames; the gate simply
+            # skips them and re-captures.
+            _log.debug(
+                "vision.cell.unsettled_color",
+                cell=index,
+                nearest_exponent=color_exp,
+                color_distance=round(color_dist, 1),
+                background=tuple(round(c) for c in background),
+                decided="unsettled (lenient mode, exponent 0)",
+            )
+            return CellRead(
+                index=index,
+                exponent=0,
+                method="unsettled",
+                confidence=0.0,
+                digits=None,
+                color_exponent=color_exp,
+                color_distance=color_dist,
+            )
+        raise BoardParseError(
+            f"cell {index}: digits unreadable (matches={number.matches!r}) and background "
+            f"rgb{tuple(round(c) for c in background)} is {color_dist:.1f} away from its "
+            f"nearest palette entry (exponent {color_exp}) -- unsettled frame "
+            "(mid-animation or dimmed), not a settled tile face"
+        )
     confidence = 1.0 - color_dist / UNKNOWN_COLOR_MAX_DIST
     if color_exp == 0:
         if number.matches:
@@ -364,15 +423,17 @@ def parse_board_detailed(
     garbage otherwise.
 
     With ``lenient=True`` a fully unknown cell yields
-    ``method="unknown"``/``exponent=0`` instead of raising (see
+    ``method="unknown"``/``exponent=0`` and an unsettled cell
+    ``method="unsettled"``/``exponent=0`` instead of raising (see
     :func:`read_cell`) -- the live runner uses this so a freshly merged
-    tile the palette does not know yet reaches the auto-learn gate. The
-    strict default stays the calibration/test contract.
+    tile the palette does not know yet reaches the auto-learn gate, and a
+    mid-animation frame is skipped rather than committed. The strict
+    default stays the calibration/test contract.
 
     Raises:
         BoardParseError: wrong image size for this calibration, or (strict
-            mode only) a cell with unreadable digits AND an unknown
-            background color.
+            mode only) a cell with unreadable digits AND an unknown or
+            unsettled background color.
     """
     _validate_image(image)
     h, w = image.shape[0], image.shape[1]
@@ -481,8 +542,8 @@ def parse_board(
 
     ``glyphs`` defaults to :meth:`GlyphStore.load_default` (packaged
     templates + ``data/glyphs/glyphs.json`` if present). With
-    ``lenient=True`` a fully unknown cell reads as exponent 0 instead of
-    raising (see :func:`parse_board_detailed`). See
+    ``lenient=True`` a fully unknown or unsettled cell reads as exponent 0
+    instead of raising (see :func:`parse_board_detailed`). See
     :func:`parse_board_detailed` for per-cell confidence/method detail.
     """
     return cast(
