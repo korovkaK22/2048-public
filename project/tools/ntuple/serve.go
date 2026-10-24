@@ -1097,7 +1097,7 @@ func (sv *server) safeHandle(line string) (reply string) {
 // first so existing local setups keep resolving to the same net);
 // champion-wall-snap-0316.bin is the record-engine artifact published with the
 // repo — the weights are NOT in git (56 MB), fetch them with
-// scripts/fetch_weights.sh.
+// scripts/setup/fetch_weights.sh.
 var weightCandidates = []string{"w-l0.003.bin", "champion-wall-snap-0316.bin"}
 
 // defaultWeightsPath resolves the weight file used when the caller gives no
@@ -1151,7 +1151,7 @@ func cmdServe(args []string) {
 	n, err := loadNet(*wf)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot load n-tuple weights: %v\n", err)
-		fmt.Fprintf(os.Stderr, "the 56 MB net is not in git; fetch it with scripts/fetch_weights.sh, "+
+		fmt.Fprintf(os.Stderr, "the 56 MB net is not in git; fetch it with scripts/setup/fetch_weights.sh, "+
 			"or pass -weights <file> / set BOT2048_NTUPLE_WEIGHTS\n")
 		os.Exit(1)
 	}

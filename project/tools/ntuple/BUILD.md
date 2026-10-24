@@ -47,7 +47,7 @@ the chosen move differs. Consequences:
 
 ## Launch (live)
 
-The live runner spawns this binary through `scripts/live.sh`, which sets:
+The live runner spawns this binary through `scripts/live/live.sh`, which sets:
 
 ```sh
 BOT2048_ENGINE2048_BIN=tools/ntuple/ntuple          # the live net engine, not engine2048
@@ -61,7 +61,7 @@ BOT2048_SEARCH_WORKERS=4    # macOS: = performance cores (sysctl -n hw.perflevel
 - **Weights are pinned on purpose.** An arg-less launch probes `run/` for
   `w-l0.003.bin` then `champion-wall-snap-0316.bin` (`serve.go
   weightCandidates`) — the net would depend on which files exist. Both come
-  from `scripts/fetch_weights.sh`.
+  from `scripts/setup/fetch_weights.sh`.
 - **`BOT2048_SEARCH_WORKERS`** — width of the parallel budget-search pool
   (budget-mode only; a fixed-depth `--depth 4` search never uses it). Code
   default is `NumCPU-2`. On the 8-core i7 `= NumCPU` (8) was best (the leaf is
