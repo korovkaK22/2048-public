@@ -10,35 +10,28 @@
 
 ## Layout
 
+Хто чим володіє (теки, скрипти, тести, доки, extras, CI) і як компонент
+видалити — **один** маніфест: [`components.md`](components.md). Тут лише скелет:
+
 ```
 monobank-2048/
-├── docs/                     документація і дослідження
+├── docs/                     документація (індекс — docs/README.md)
 └── project/
-    ├── pyproject.toml
-    ├── src/bot2048/
-    │   ├── core/             чистий движок гри (без I/O)
-    │   ├── ai/               стратегії + мiст до Go-рушія
-    │   ├── sim/              симулятор, телеметрія причин смерті
-    │   ├── storage/          SQLite: схема, recorder, репозиторії
-    │   ├── analysis/         статистика спавнів, ASCII-рендер дошки
-    │   ├── vision/           кадр → Board (цифри + палітра, калібрування)
-    │   ├── device/           ADB, захоплення екрана, humanizer
-    │   ├── runner/           живий цикл і research-режим
-    │   ├── ondevice/         хостова частина протоколу APK
-    │   ├── tgnotify/         Telegram-мiст (алерти, heartbeat, інциденти)
-    │   ├── logging_setup.py  structlog: JSON у logs/ + читабельна консоль
-    │   ├── recording.py      контракт подій гри (НЕ міняти без узгодження)
-    │   └── cli.py            typer-CLI `bot2048` (sim / db / vision / live)
-    ├── tests/                дзеркалить src: tests/core, tests/ai, ...
-    ├── tools/
-    │   ├── engine2048/       Go: базовий рушій (ручна евристика «farm»)
-    │   └── ntuple/           Go: n-tuple мережа, TD-навчання, банкір рекорду
-    ├── ondevice-apk/         Kotlin: MediaProjection-семплер дошки
-    ├── research/             одноразові дослідницькі скрипти + їх дані
-    ├── config/experiments/   конфіги батч-експериментів
-    ├── scripts/              по компонентах: live/ sim/ setup/ dev/ macos/
+    ├── src/bot2048/          core · ai · sim · storage+analysis · vision · device ·
+    │                         runner (live) · ondevice · tgnotify · cli.py ·
+    │                         recording.py · logging_setup.py
+    ├── tests/                дзеркалить src + test_architecture.py (межі компонентів)
+    ├── tools/{engine2048,ntuple}/   Go-рушії (один stdin-протокол)
+    ├── ondevice-apk/         Kotlin-семплер (компонент ondevice)
+    ├── scripts/{live,sim,setup,dev,macos}/   скрипти по компонентах
+    ├── config/{experiments,strategies}/
+    ├── research/             одноразові скрипти + сирі дані (звіти — docs/research/)
     └── data/                 games.db (gitignored) + calibration.json
 ```
+
+Межі між підпакетами (хто кого може імпортувати) задані контрактами
+`[tool.importlinter]` у `pyproject.toml` і перевіряються `pytest`; граф —
+`scripts/dev/import_graph.py`.
 
 ## Незмінні контракти
 
