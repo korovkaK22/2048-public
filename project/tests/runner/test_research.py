@@ -20,6 +20,14 @@ from bot2048.runner.research import ResearchConfig, ResearchRunner, make_policy
 from tests.runner.conftest import FRESH_BOARD, GRID_BBOX, FakePhone
 
 
+@pytest.fixture(autouse=True)
+def _isolate_runtime_roots(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """ResearchRunner builds its LiveRunner with the DEFAULT relative artifact
+    roots (``logs/game-screens``, ``logs/debug-captures``); run from tmp_path so
+    the end-of-game PNGs never land in the real ``project/logs/``."""
+    monkeypatch.chdir(tmp_path)
+
+
 def _make_research(
     tmp_path: Path,
     phone: FakePhone,

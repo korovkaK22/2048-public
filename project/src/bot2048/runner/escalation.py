@@ -19,8 +19,8 @@ from __future__ import annotations
 import time
 from collections import defaultdict, deque
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, fields
+from typing import Any, Protocol
 
 import structlog
 
@@ -28,12 +28,16 @@ from bot2048.device import ui_map
 from bot2048.device.adb import DeviceError, EmptyScreencapError
 from bot2048.runner.alerts import AlertCode
 from bot2048.runner.incidents import Image
+from bot2048.runner.live_config import LiveConfig
 from bot2048.vision.states import ScreenState, StateDetection
 
 log = structlog.get_logger(__name__)
 
 __all__ = [
+    "DEFAULT_ATTEMPTS",
     "POLICIES",
+    "SCREEN_UNEXPECTED_REPOLLS",
+    "SCREEN_UNEXPECTED_REPOLL_S",
     "SECURE_UI_DUMP_RETRIES",
     "SECURE_UI_DUMP_RETRY_WAIT_S",
     "Classifier",
@@ -43,6 +47,7 @@ __all__ = [
     "ProbeResult",
     "RepeatCounter",
     "confirm_incident",
+    "policy_for",
     "probe_screen",
 ]
 
@@ -72,28 +77,160 @@ Classifier = Callable[[Image], StateDetection]
 
 @dataclass(frozen=True, slots=True)
 class CodePolicy:
-    """Per-code escalation policy (§5): WARN retries, then supervisor/FATAL."""
+    """Per-code retry/escalation policy (§5) -- THE retry table, as data.
+
+    ``warn_retries`` is the number of automatic retries spent on a failure
+    before it is recorded as an incident (so ``max_attempts`` = retries + 1
+    tries in total); ``backoff_s`` the pauses between them; ``source`` names
+    the knob that ENFORCES the budget at runtime (the policy mirrors it --
+    see :func:`_live_default`), so the table and the loop can never drift
+    apart silently; ``note`` is the one-line human rationale that ends up in
+    ``alert.json["retry_policy"]`` / the incident bundle.
+    """
 
     warn_retries: int
     backoff_s: tuple[float, ...]
     fatal_immediately: bool = False  # skip WARN and ERROR-recovery entirely
+    source: str = "runner.escalation.POLICIES"
+    note: str = ""
+
+    @property
+    def max_attempts(self) -> int:
+        """Total tries incl. the first one (``1`` for fatal-immediately codes)."""
+        return self.warn_retries + 1
+
+    def describe(self) -> dict[str, Any]:
+        """JSON-ready view for ``alert.json["retry_policy"]`` (schema v2)."""
+        return {
+            "max_attempts": self.max_attempts,
+            "retries": self.warn_retries,
+            "backoff_s": list(self.backoff_s),
+            "fatal_immediately": self.fatal_immediately,
+            "source": self.source,
+            "note": self.note,
+        }
 
 
-#: §5 defaults. AUTH_REQUIRED / CRASH / RESTART_LOOP go straight to FATAL:
-#: bank app -- no taps, no auto-recovery; the operator
-#: resolves them. WATCHDOG_TIMEOUT is monitor-side only, never raised here.
+def _live_default(name: str) -> Any:
+    """Default value of a :class:`LiveConfig` field (the enforcing knob).
+
+    The loop enforces most retry budgets through ``LiveConfig`` (CLI-tunable);
+    the policy table reads those defaults so there is ONE source of truth and
+    the table can never advertise a budget the loop does not apply.
+    """
+    for f in fields(LiveConfig):
+        if f.name == name:
+            return f.default
+    raise KeyError(name)  # pragma: no cover - programming error
+
+
+#: Default number of attempts for a code that has no dedicated runtime knob
+#: (the §5 convention: "retry ~3 times, then record the incident").
+DEFAULT_ATTEMPTS: int = 3
+
+#: Tap-less re-polls of a NOT_IN_GAME / UNKNOWN screen before the supervisor
+#: FATALs (the SCREEN_UNEXPECTED budget). The window must OUTLAST the game's
+#: animated cat-mascot paw-reach (it covers the top-centre board cells for a
+#: few seconds, dropping board-match to ~44% -- LIVE incident 20260711T2040,
+#: score 34052 killed at ply 1859): 20 x 0.5 s ~= 10 s. A genuinely stuck
+#: non-game screen stays non-GAME the whole window and still FATALs (blind
+#: taps forbidden). ``SupervisorConfig.transient_repolls`` reads THIS value.
+SCREEN_UNEXPECTED_REPOLLS: int = 20
+SCREEN_UNEXPECTED_REPOLL_S: float = 0.5
+
+#: §5 retry table -- the single source every incident reports against.
+#:
+#: AUTH_REQUIRED / CRASH / RESTART_LOOP go straight to FATAL: bank app -- no
+#: taps, no auto-recovery; the operator resolves them. WATCHDOG_TIMEOUT is
+#: monitor-side only (never raised by the runner) and listed for completeness.
+#: Where a runtime knob enforces the budget the row MIRRORS that knob
+#: (``source``); change the knob, and the table follows.
 POLICIES: dict[AlertCode, CodePolicy] = {
-    AlertCode.DEVICE_LOST: CodePolicy(3, (0.5, 1.0, 2.0)),
-    AlertCode.AUTH_REQUIRED: CodePolicy(0, (), fatal_immediately=True),
-    AlertCode.VISION_MISMATCH: CodePolicy(3, (0.5, 1.0, 2.0)),
-    AlertCode.MOVE_REJECTED: CodePolicy(2, (0.5, 1.0)),
-    AlertCode.GAME_OVER_UNEXPECTED: CodePolicy(1, (0.5,)),
-    AlertCode.SCREEN_UNEXPECTED: CodePolicy(3, (0.5, 1.0, 2.0)),
-    AlertCode.CRASH: CodePolicy(0, (), fatal_immediately=True),
-    AlertCode.STORAGE_ERROR: CodePolicy(3, (0.5, 1.0, 2.0)),
-    AlertCode.RESTART_LOOP: CodePolicy(0, (), fatal_immediately=True),
-    AlertCode.LOOP_ERROR: CodePolicy(3, (0.5, 1.0, 2.0)),
+    AlertCode.DEVICE_LOST: CodePolicy(
+        DEFAULT_ATTEMPTS,
+        (0.5, 1.0, 2.0),
+        source="device.adb screencap attempts (3) -> supervisor -> SessionRecovery",
+        note="3 screencap attempts in the adb layer; then ERROR -> FATAL -> session "
+        "recovery (reconnect + backoff) under LiveConfig.recover_max_per_hour",
+    ),
+    AlertCode.AUTH_REQUIRED: CodePolicy(
+        0,
+        (),
+        fatal_immediately=True,
+        source="LiveConfig.auth_retries (auto-login only)",
+        note="bank auth wall: FATAL with zero taps; opt-in auto-login types the PIN "
+        f"up to LiveConfig.auth_retries={_live_default('auth_retries')} times first",
+    ),
+    AlertCode.VISION_MISMATCH: CodePolicy(
+        int(_live_default("parse_retries")),
+        (0.5, 1.0, 2.0),
+        source="LiveConfig.parse_retries",
+        note="stabilized re-captures per verification (+ occlusion slow retries "
+        f"LiveConfig.occlusion_max_retries={_live_default('occlusion_max_retries')} "
+        "and the auto-learn gate) before the move is declared a mismatch",
+    ),
+    AlertCode.MOVE_REJECTED: CodePolicy(
+        int(_live_default("swipe_retries")),
+        tuple([float(_live_default("swipe_retry_delay_s"))] * int(_live_default("swipe_retries"))),
+        source="LiveConfig.swipe_retries",
+        note="re-swipes when the board did not change; total attempts = retries + 1",
+    ),
+    AlertCode.GAME_OVER_UNEXPECTED: CodePolicy(
+        1,
+        (0.5,),
+        source="Supervisor.start_new_game + SessionRecovery",
+        note="one restart flow; a failed restart FATALs and the session recovery "
+        "retries it under LiveConfig.recover_max_per_hour",
+    ),
+    AlertCode.SCREEN_UNEXPECTED: CodePolicy(
+        SCREEN_UNEXPECTED_REPOLLS,
+        (SCREEN_UNEXPECTED_REPOLL_S,) * SCREEN_UNEXPECTED_REPOLLS,
+        source="escalation.SCREEN_UNEXPECTED_REPOLLS (SupervisorConfig.transient_repolls)",
+        note="tap-less re-polls of a NOT_IN_GAME/UNKNOWN screen (outlasts the mascot "
+        "paw animation); CONFIRM_NEW_GAME/SCREEN_OFF get one calibrated recovery",
+    ),
+    AlertCode.CRASH: CodePolicy(
+        0,
+        (),
+        fatal_immediately=True,
+        source="lifecycle.run_session",
+        note="uncaught exception: always FATAL, exit(2)",
+    ),
+    AlertCode.STORAGE_ERROR: CodePolicy(
+        0,
+        (),
+        source="runner (WARN only)",
+        note="SQLite write failure is a WARN and the game keeps going; no retry of the "
+        "transaction is implemented (the AsyncRecorder re-queues internally)",
+    ),
+    AlertCode.RESTART_LOOP: CodePolicy(
+        0,
+        (),
+        fatal_immediately=True,
+        source="lifecycle.enforce_restart_budget / LiveConfig.low_score_churn_limit",
+        note="restart budget exceeded (FATAL, refuse to start) or a churn loop of "
+        "very short games (ERROR, session continues)",
+    ),
+    AlertCode.LOOP_ERROR: CodePolicy(
+        int(_live_default("recover_max_per_hour")),
+        (float(_live_default("recover_backoff_s")),) * int(_live_default("recover_max_per_hour")),
+        source="LiveConfig.recover_max_per_hour",
+        note="in-place session recoveries per sliding hour after an unexpected "
+        "exception / transient FATAL; over budget -> the cause propagates (CRASH)",
+    ),
+    AlertCode.WATCHDOG_TIMEOUT: CodePolicy(
+        0,
+        (),
+        fatal_immediately=True,
+        source="tgnotify.watch (monitor-side)",
+        note="synthesized by the watcher when heartbeat.json is stale; never raised here",
+    ),
 }
+
+
+def policy_for(code: AlertCode) -> CodePolicy:
+    """The retry policy of ``code`` (a conservative default for unknown codes)."""
+    return POLICIES.get(code, CodePolicy(DEFAULT_ATTEMPTS - 1, (), source="default"))
 
 
 class RepeatCounter:

@@ -1,4 +1,4 @@
-"""Alert stream ``logs/alerts.jsonl`` -- schema v1 (docs/ops-monitoring.md §2.3, §3).
+"""Alert stream ``logs/alerts.jsonl`` -- schema v2 (docs/ops-monitoring.md §2.3, §3).
 
 Only WARN/ERROR/FATAL go here; INFO/DEBUG stays in the daily JSONL. The file
 is strictly append-only for the bot -- rotation is the operator's job and
@@ -9,6 +9,17 @@ WITHOUT BOM, LF endings, ``flush()`` + ``os.fsync()`` after every line, so
 Schema evolution: adding codes/fields is fine; renaming or re-typing a field
 requires bumping :data:`ALERT_SCHEMA_VERSION`. The monitor filters only on
 ``level``, so new codes never break it.
+
+Schema history:
+
+* **v1** -- ts/level/code/message/run_id/game_id/move_no/screen_state/
+  board_hex/attempt/incident_dir/extra.
+* **v2** (incident tracing) -- purely ADDITIVE: ``attempts`` (how many tries
+  were spent before this alert), ``retry_policy`` (the budget that was
+  exhausted, as data), ``capture_kind`` (how the incident screenshot was
+  obtained), ``stage`` (where in the move pipeline it failed), ``strategy`` /
+  ``spec_hash`` / ``engine`` (what was playing). Every v1 field keeps its
+  name, type and meaning; v1 readers ignore the new keys.
 """
 
 from __future__ import annotations
@@ -37,7 +48,7 @@ __all__ = [
     "utc_now_iso",
 ]
 
-ALERT_SCHEMA_VERSION: int = 1
+ALERT_SCHEMA_VERSION: int = 2
 
 DEFAULT_ALERTS_PATH: Path = Path("logs") / "alerts.jsonl"
 
@@ -73,7 +84,12 @@ def utc_now_iso() -> str:
 
 @dataclass(frozen=True, slots=True)
 class Alert:
-    """One alert row (schema v1). ``None`` fields are emitted as JSON null."""
+    """One alert row (schema v2). ``None`` fields are emitted as JSON null.
+
+    The v2 fields (``attempts`` .. ``engine``) are filled by
+    :class:`bot2048.runner.incidents.IncidentSink` for every ERROR/FATAL; a
+    bare WARN written directly keeps them ``None``.
+    """
 
     level: AlertLevel
     code: AlertCode
@@ -87,6 +103,14 @@ class Alert:
     incident_dir: str | None = None  # relative path, None for WARN
     extra: dict[str, Any] = field(default_factory=dict)
     ts: str = field(default_factory=utc_now_iso)
+    # -- v2 (additive) ---------------------------------------------------------
+    attempts: int | None = None  # tries spent before giving up (retry budget used)
+    retry_policy: dict[str, Any] | None = None  # the exhausted budget, as data
+    capture_kind: str | None = None  # how screenshot_after.png was obtained
+    stage: str | None = None  # move-pipeline stage that failed (capture/parse/...)
+    strategy: str | None = None  # strategy label (GameStarted.strategy)
+    spec_hash: str | None = None  # StrategySpec hash when the strategy carries one
+    engine: dict[str, Any] | None = None  # engine info (kind/depth/budget/version)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -103,6 +127,13 @@ class Alert:
             "attempt": self.attempt,
             "incident_dir": self.incident_dir,
             "extra": self.extra,
+            "attempts": self.attempts,
+            "retry_policy": self.retry_policy,
+            "capture_kind": self.capture_kind,
+            "stage": self.stage,
+            "strategy": self.strategy,
+            "spec_hash": self.spec_hash,
+            "engine": self.engine,
         }
 
     def to_json_line(self) -> str:

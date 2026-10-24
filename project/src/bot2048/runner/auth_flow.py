@@ -154,6 +154,9 @@ class AuthFlow:
                 probe=probe,
                 game_id=state.game_id if state is not None else None,
                 move_no=state.ply if state is not None else None,
+                stage="auth",
+                attempts=0,  # no PIN attempt is ever made without opt-in
+                extra={"auto_login": self.config.auto_login},
             )
             raise LiveLoopError("AUTH_REQUIRED policy must be fatal")  # pragma: no cover
         # A post-idle auth wall is EXPECTED on an unattended run, and a single
@@ -199,6 +202,8 @@ class AuthFlow:
                     probe=after,
                     game_id=state.game_id if state is not None else None,
                     move_no=state.ply if state is not None else None,
+                    stage="auth",
+                    attempts=self._auth_popup_restarts,
                 )
             if after.state is ScreenState.WIN_POPUP_2048:
                 raise _WinPopup2048(after.reason)
@@ -210,6 +215,9 @@ class AuthFlow:
                 probe=after,
                 game_id=state.game_id if state is not None else None,
                 move_no=state.ply if state is not None else None,
+                stage="auth",
+                attempts=self.config.auth_retries,
+                extra={"auto_login": True, "auth_retries": self.config.auth_retries},
             )
             raise LiveLoopError("AUTH_REQUIRED policy must be fatal")  # pragma: no cover
         assert after.image is not None
@@ -255,6 +263,9 @@ class AuthFlow:
                 AlertCode.AUTH_REQUIRED,
                 f"restart flow hit the auth wall and {reason} -- pausing for a human (no taps)",
                 probe=probe,
+                stage="restart",
+                attempts=0,
+                extra={"auto_login": self.config.auto_login},
             )
             raise LiveLoopError("AUTH_REQUIRED policy must be fatal")  # pragma: no cover
         self._notify("INFO", "AUTH", "🔐 Токен протух на рестарті — вводжу ПІН")
@@ -272,6 +283,9 @@ class AuthFlow:
             f"restart auto-login did not clear the wall after "
             f"{self.config.auth_retries} attempt(s) (still {after.state.value})",
             probe=after,
+            stage="restart",
+            attempts=self.config.auth_retries,
+            extra={"auto_login": True, "auth_retries": self.config.auth_retries},
         )
         raise LiveLoopError("AUTH_REQUIRED policy must be fatal")  # pragma: no cover
 

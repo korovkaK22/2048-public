@@ -2,8 +2,10 @@
 
 The overnight-hardening policy that keeps a session alive: :class:`SessionRecovery`
 decides which failures are transient (:meth:`recoverable`) and, for those,
-recovers the session in place (:meth:`recover`: incident bundle + ERROR alert +
-reconnect + backoff) under a sliding-hour budget.
+recovers the session in place (:meth:`recover`: incident bundle via the shared
+:class:`~bot2048.runner.incidents.IncidentSink` -- fresh screenshot, traceback,
+``live_events`` row -- + ERROR alert + reconnect + backoff) under a sliding-hour
+budget.
 :class:`~bot2048.runner.live.LiveRunner` holds one and calls it from the game
 loop; the extraction is behavior-preserving.
 
@@ -33,7 +35,6 @@ from __future__ import annotations
 import traceback
 from collections import deque
 from collections.abc import Callable
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -43,10 +44,10 @@ import structlog
 # import time can crash on the half-initialized module when the device layer
 # loads first. Reference ``_supervisor_mod.FatalIncident`` lazily instead.
 from bot2048.device import supervisor as _supervisor_mod
-from bot2048.runner import incidents
-from bot2048.runner.alerts import Alert, AlertCode, AlertLevel, AlertWriter
+from bot2048.runner.alerts import AlertCode, AlertLevel, AlertWriter
 from bot2048.runner.errors import LiveLoopError
-from bot2048.runner.incidents import MoveRing
+from bot2048.runner.escalation import policy_for
+from bot2048.runner.incidents import IncidentSink, MoveRing
 from bot2048.runner.live_config import LiveConfig
 
 if TYPE_CHECKING:
@@ -75,7 +76,7 @@ class SessionRecovery:
         clock: Callable[[], float],
         sleep: Callable[[float], Any],
         alerts: AlertWriter,
-        incidents_root: Path,
+        incidents: IncidentSink,
         run_id: str | None,
         notify: Callable[[str, str, str], None],
         reconnect: Callable[[], Any] | None = None,
@@ -86,7 +87,7 @@ class SessionRecovery:
         self._clock = clock
         self._sleep = sleep
         self.alerts = alerts
-        self.incidents_root = incidents_root
+        self.incidents = incidents
         self.run_id = run_id
         self._notify = notify
         self.reconnect = reconnect
@@ -131,31 +132,34 @@ class SessionRecovery:
                 per_hour=self.config.recover_max_per_hour,
             )
             raise exc
-        incident_dir: str | None = None
-        if isinstance(exc, _supervisor_mod.FatalIncident):
-            incident_dir = exc.alert.incident_dir  # bundle already on disk
-        else:
-            try:
-                incident_dir = incidents.create_bundle(
-                    AlertCode.LOOP_ERROR.value,
-                    root=self.incidents_root,
-                    screenshot_before=self.ring.good_frame if self.ring is not None else None,
-                    last_moves=self.ring.snapshot() if self.ring is not None else [],
-                    traceback_text=traceback.format_exc(),
-                    context={"run_id": self.run_id},
-                ).as_posix()
-            except Exception as bexc:  # incident trouble must not stop recovery
-                log.warning("live.recover_bundle_failed", error=str(bexc))
-        self.alerts.write(
-            Alert(
-                level=AlertLevel.ERROR,
-                code=AlertCode.LOOP_ERROR,
-                message=f"session recovering from {type(exc).__name__}: {exc}",
-                run_id=self.run_id,
-                attempt=len(self._recoveries),
-                incident_dir=incident_dir,
-            )
+        # ONE incident path (docs/ops-monitoring.md §4): a FatalIncident already
+        # has its bundle on disk -> the LOOP_ERROR alert ATTACHES to it (same
+        # folder, one more alert line); any other exception gets a full bundle
+        # with a FRESH screenshot + traceback + last moves, and in both cases a
+        # live_events row with incident_dir set.
+        attach_to = (
+            exc.alert.incident_dir
+            if isinstance(exc, _supervisor_mod.FatalIncident)
+            else None
         )
+        policy = policy_for(AlertCode.LOOP_ERROR)
+        try:
+            self.incidents.record(
+                AlertCode.LOOP_ERROR,
+                AlertLevel.ERROR,
+                f"session recovering from {type(exc).__name__}: {exc}",
+                attempt=len(self._recoveries),
+                attempts=len(self._recoveries),
+                retry_policy=policy.describe(),
+                stage="session",
+                extra={"cause": type(exc).__name__},
+                traceback_text=(
+                    "".join(traceback.format_exception(exc)) if attach_to is None else None
+                ),
+                attach_to=attach_to,
+            )
+        except Exception as bexc:  # incident trouble must not stop recovery
+            log.warning("live.recover_bundle_failed", error=str(bexc))
         log.warning(
             "live.session_recovering",
             cause=type(exc).__name__,
