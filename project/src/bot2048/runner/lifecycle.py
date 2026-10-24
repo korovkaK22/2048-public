@@ -40,11 +40,11 @@ from bot2048.device.supervisor import FatalIncident
 from bot2048.runner import incidents
 from bot2048.runner.alerts import (
     DEFAULT_ALERTS_PATH,
-    Alert,
     AlertCode,
     AlertLevel,
     AlertWriter,
 )
+from bot2048.runner.escalation import policy_for
 from bot2048.runner.heartbeat import DEFAULT_HEARTBEAT_PATH, HeartbeatWriter
 from bot2048.storage.errors import StorageError
 from bot2048.storage.ops_schema import OpsRepository
@@ -191,9 +191,16 @@ def enforce_restart_budget(
     run_id: str,
     now: float | None = None,
     sleep: Callable[[float], Any] = time.sleep,
+    incidents_root: Path = incidents.DEFAULT_INCIDENTS_ROOT,
 ) -> None:
-    """§7 limits. Over budget -> ``RESTART_LOOP`` FATAL alert + raise;
-    inside the 60 s cooldown -> sleep out the remainder."""
+    """§7 limits. Over budget -> ``RESTART_LOOP`` FATAL alert + bundle + raise;
+    inside the 60 s cooldown -> sleep out the remainder.
+
+    The bundle carries no screenshot (no device is connected yet) but the
+    recent run starts, so the restart storm is traceable from the alert alone.
+    No ``live_events`` row: the ``runs`` row of this run does not exist yet
+    (FK), and the previous runs' rows already tell the story.
+    """
     now = now if now is not None else time.time()
     starts = ops.recent_run_starts(now - 3600.0)
     if len(starts) >= RESTART_MAX_PER_HOUR:
@@ -202,13 +209,18 @@ def enforce_restart_budget(
             f"(limit {RESTART_MAX_PER_HOUR}) -- refusing to start; "
             "manual decision required"
         )
-        alerts.write(
-            Alert(
-                level=AlertLevel.FATAL,
-                code=AlertCode.RESTART_LOOP,
-                message=message,
-                run_id=run_id,
-            )
+        incidents.IncidentSink(root=incidents_root, alerts=alerts, run_id=run_id).record(
+            AlertCode.RESTART_LOOP,
+            AlertLevel.FATAL,
+            message,
+            attempts=len(starts),
+            retry_policy={
+                **policy_for(AlertCode.RESTART_LOOP).describe(),
+                "max_per_hour": RESTART_MAX_PER_HOUR,
+                "cooldown_s": RESTART_COOLDOWN_S,
+            },
+            stage="startup",
+            extra={"recent_starts": [round(s, 3) for s in starts]},
         )
         raise RestartLoopError(message)
     if starts:
@@ -269,7 +281,9 @@ def run_session(
     try:
         ops = OpsRepository(db_path)  # startup REQUIRES a working DB (§7 budget)
         try:
-            enforce_restart_budget(ops, alerts, run_id=run_id, sleep=sleep)
+            enforce_restart_budget(
+                ops, alerts, run_id=run_id, sleep=sleep, incidents_root=incidents_root
+            )
             ops.start_run(run_id, os.getpid(), git_rev=git_rev, args=args or {})
             try:
                 closed = ops.mark_interrupted_games()
@@ -300,24 +314,23 @@ def run_session(
                 raise
             except Exception as exc:
                 heartbeat.stop(remove=False)
-                bundle = incidents.create_bundle(
-                    AlertCode.CRASH.value,
-                    root=incidents_root,
-                    last_moves=ctx.ring.snapshot(),
-                    screenshot_before=ctx.ring.good_frame,
+                # ONE incident path: bundle (FRESH screenshot through the ring's
+                # capture hook the live runner installed, last good frame, last
+                # moves, traceback) + FATAL alert (-> Telegram with the photo)
+                # + live_events row with incident_dir. The run row still exists
+                # here, so the DB mirror works; all of it best-effort.
+                incidents.IncidentSink(
+                    root=incidents_root, alerts=alerts, ops=ops, run_id=run_id, ring=ctx.ring
+                ).record(
+                    AlertCode.CRASH,
+                    AlertLevel.FATAL,
+                    f"unhandled {type(exc).__name__}: {exc}",
+                    attempts=1,
+                    retry_policy=policy_for(AlertCode.CRASH).describe(),
+                    stage="session",
+                    extra={"args": args or {}, "pid": os.getpid(), "cause": type(exc).__name__},
                     traceback_text=traceback.format_exc(),
-                    context={"run_id": run_id, "args": args or {}, "pid": os.getpid()},
                 )
-                alert = alerts.write(
-                    Alert(
-                        level=AlertLevel.FATAL,
-                        code=AlertCode.CRASH,
-                        message=f"unhandled {type(exc).__name__}: {exc}",
-                        run_id=run_id,
-                        incident_dir=bundle.as_posix(),
-                    )
-                )
-                incidents.write_alert_copy(bundle, alert)
                 _end_run_quietly(ops, run_id, "fatal:CRASH")
                 raise SystemExit(2) from exc
             else:

@@ -40,6 +40,34 @@ _REMINDER_S = 600.0
 _OUTBOX_FLUSH_S = 60.0
 _POLL_GAP_S = 2.0
 
+#: Incident-bundle screenshots in preference order (docs/ops-monitoring.md §4):
+#: the incident-time frame first, the last healthy frame as the fallback.
+_INCIDENT_PHOTOS: tuple[str, ...] = (
+    "screenshot_after.png",
+    "screenshot_last_parsed.png",
+    "screenshot_before.png",
+)
+#: A FATAL chained into its ERROR's bundle has its own fresh frame.
+_INCIDENT_PHOTOS_FATAL: tuple[str, ...] = ("screenshot_fatal.png", *_INCIDENT_PHOTOS)
+
+
+def incident_photo(root: Path, incident_dir: str | None, level: str = "") -> str | None:
+    """Path of the photo to attach for an alert pointing at ``incident_dir``.
+
+    ``None`` when the alert has no bundle or the bundle holds no screenshot
+    (FLAG_SECURE-blind auth wall, device lost before any frame) -- the text
+    alert then goes out alone. Shared by the in-process notifier hook and the
+    reserve watcher so both pick the same picture.
+    """
+    if not incident_dir:
+        return None
+    names = _INCIDENT_PHOTOS_FATAL if level == "FATAL" else _INCIDENT_PHOTOS
+    for name in names:
+        cand = root / incident_dir / name
+        if cand.is_file():
+            return str(cand)
+    return None
+
 
 # ==============================================================================
 
@@ -142,20 +170,16 @@ class TgNotifier(_TransportMixin, _OutboxMixin, _CommandsMixin):
     def notify_alert(self, alert: Any) -> None:
         """Adapter for :class:`bot2048.runner.alerts.AlertWriter` hook.
 
-        Picks the incident photo (``screenshot_after.png``, fallback
-        ``screenshot_before.png``) and forwards the alert ts so the worker
-        can journal delivery into ``logs/tg_sent.jsonl`` (§6.2).
+        Picks the incident photo (:func:`incident_photo`: the incident-time
+        frame of THIS alert -- ``screenshot_fatal.png`` for a chained FATAL,
+        else ``screenshot_after.png``, fallback ``screenshot_before.png``) and
+        forwards the alert ts so the worker can journal delivery into
+        ``logs/tg_sent.jsonl`` (§6.2). The reason travels in the caption.
         """
         try:
             level = getattr(alert.level, "value", str(alert.level))
             code = getattr(alert.code, "value", str(alert.code))
-            photo: str | None = None
-            if alert.incident_dir:
-                for name in ("screenshot_after.png", "screenshot_before.png"):
-                    cand = self.root / alert.incident_dir / name
-                    if cand.is_file():
-                        photo = str(cand)
-                        break
+            photo = incident_photo(self.root, alert.incident_dir, level)
             self.notify(level, code, alert.message, photo, alert_ts=alert.ts)
         except Exception:
             pass

@@ -74,9 +74,11 @@ from bot2048.device import ui_map
 from bot2048.runner import incidents
 from bot2048.runner.alerts import Alert, AlertCode, AlertLevel, AlertWriter
 from bot2048.runner.escalation import (
-    POLICIES,
+    SCREEN_UNEXPECTED_REPOLL_S,
+    SCREEN_UNEXPECTED_REPOLLS,
     Classifier,
     ProbeResult,
+    policy_for,
     probe_screen,
 )
 from bot2048.storage.errors import StorageError
@@ -132,24 +134,51 @@ class FatalIncident(RuntimeError):
         self.alert = alert
 
 
+#: Default ``stage`` (where in the pipeline it failed) per code, for callers
+#: that cannot pass one (the observation gate is shared with the vision rewrite
+#: and is not touched here). ``VISION_MISMATCH`` splits on the message: the
+#: gate's "board parse failed: ..." is the PARSE stage, everything else the
+#: post-swipe VERIFY stage.
+_DEFAULT_STAGES: dict[AlertCode, str] = {
+    AlertCode.SCREEN_UNEXPECTED: "capture",
+    AlertCode.DEVICE_LOST: "capture",
+    AlertCode.AUTH_REQUIRED: "auth",
+    AlertCode.VISION_MISMATCH: "verify",
+    AlertCode.MOVE_REJECTED: "swipe",
+    AlertCode.GAME_OVER_UNEXPECTED: "restart",
+    AlertCode.CRASH: "session",
+    AlertCode.LOOP_ERROR: "session",
+    AlertCode.RESTART_LOOP: "startup",
+    AlertCode.STORAGE_ERROR: "record",
+}
+
+
+def _default_stage(code: AlertCode, message: str) -> str:
+    if code is AlertCode.VISION_MISMATCH and message.startswith("board parse failed"):
+        return "parse"
+    return _DEFAULT_STAGES.get(code, "unknown")
+
+
 @dataclass(frozen=True, slots=True)
 class SupervisorConfig:
     settle_delay_s: float = 0.8  # popup animation settle after a tap
     wake_settle_s: float = 1.5  # screen-on settle after KEYCODE_WAKEUP
     incidents_root: Path = incidents.DEFAULT_INCIDENTS_ROOT
+    #: Retention budgets of ``incidents_root`` (oldest bundles pruned first,
+    #: never the current run's) -- see :func:`bot2048.runner.incidents.prune_incidents`.
+    incidents_max_bytes: int = incidents.DEFAULT_MAX_TOTAL_BYTES
+    incidents_max_bundles: int = incidents.DEFAULT_MAX_BUNDLES
     #: Re-captures before a FATAL when a tap-less state (NOT_IN_GAME /
     #: UNKNOWN) is seen mid-game. One such frame is usually transient -- a
     #: mid-animation frame, the game-over card sliding in, a partial paw
     #: occlusion -- so the board momentarily drops below the GAME threshold.
     #: A GENUINELY stuck non-game screen (real game-over popup, bank home)
     #: stays non-GAME across every re-poll and still FATALs: blind taps stay
-    #: forbidden (fail-closed). The window must OUTLAST the game's animated
-    #: cat-mascot paw-reach (it reaches onto the top-centre board cells for a
-    #: few seconds, dropping board-match to ~44% — LIVE incident 20260711T2040,
-    #: score 34052 killed at ply 1859). 20 x 0.5s = ~10s outlasts it; a real
-    #: non-game screen stays non-GAME the whole window and still FATALs.
-    transient_repolls: int = 20
-    transient_repoll_s: float = 0.5  # settle between transient re-polls
+    #: forbidden (fail-closed). The budget is the SCREEN_UNEXPECTED row of the
+    #: retry table (:data:`bot2048.runner.escalation.POLICIES`): 20 x 0.5 s
+    #: outlasts the cat-mascot paw animation (LIVE incident 20260711T2040).
+    transient_repolls: int = SCREEN_UNEXPECTED_REPOLLS
+    transient_repoll_s: float = SCREEN_UNEXPECTED_REPOLL_S  # settle between re-polls
 
 
 class Supervisor:
@@ -172,6 +201,7 @@ class Supervisor:
         sleep: Callable[[float], Any] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
         auth_resolver: AuthResolver | None = None,
+        incident_sink: incidents.IncidentSink | None = None,
     ) -> None:
         self.device = device
         self.classify = classify
@@ -185,8 +215,26 @@ class Supervisor:
         self.auth_resolver = auth_resolver
         self._sleep = sleep
         self._clock = clock
+        #: THE incident path (docs/ops-monitoring.md §4): every ERROR/FATAL
+        #: here goes through it. The live runner reads this attribute to share
+        #: the same sink (one chain/dedupe state, one prune budget) for its own
+        #: incidents and installs the fresh-capture hook / session context.
+        self.incidents: incidents.IncidentSink = incident_sink or incidents.IncidentSink(
+            root=self.config.incidents_root,
+            alerts=alerts,
+            ops=ops,
+            run_id=run_id,
+            ring=ring,
+            max_total_bytes=self.config.incidents_max_bytes,
+            max_bundles=self.config.incidents_max_bundles,
+        )
 
     # -- public API -----------------------------------------------------------
+
+    @property
+    def last_incident_dir(self) -> str | None:
+        """Bundle of the most recent incident (the loop links ``MOVE_ABORTED`` to it)."""
+        return self.incidents.last_dir
 
     def handle_error(
         self,
@@ -199,6 +247,8 @@ class Supervisor:
         board_hex: str | None = None,
         attempt: int | None = None,
         extra: dict[str, Any] | None = None,
+        stage: str | None = None,
+        attempts: int | None = None,
     ) -> incidents.Image:
         """ERROR path (§5): bundle + ERROR alert + ONE recovery cycle.
 
@@ -207,13 +257,21 @@ class Supervisor:
         taken. Returns a healthy GAME frame on success; raises
         :class:`FatalIncident` otherwise. ``fatal_immediately`` codes
         (AUTH_REQUIRED, CRASH, RESTART_LOOP) skip recovery -- single FATAL.
+
+        ``stage`` names the move-pipeline stage that failed (``capture`` /
+        ``parse`` / ``verify`` / ``swipe`` / ``auth`` / ``restart`` ...;
+        inferred from the code when omitted) and ``attempts`` how many tries
+        the caller spent before escalating (defaults to the retry table's
+        ``max_attempts`` -- callers reach here only once the budget is gone).
         """
         if probe is None:
             probe = probe_screen(self.device, self.classify)
         code = self._upgrade_code(code, probe)
-
-        policy = POLICIES.get(code)
-        if policy is not None and policy.fatal_immediately:
+        stage = stage or _default_stage(code, message)
+        policy = policy_for(code)
+        if attempts is None:
+            attempts = policy.max_attempts
+        if policy.fatal_immediately:
             self.fatal(
                 code,
                 message,
@@ -223,25 +281,24 @@ class Supervisor:
                 board_hex=board_hex,
                 attempt=attempt,
                 extra=extra,
+                stage=stage,
+                attempts=attempts,
             )
 
-        bundle = self._bundle(code, probe)
-        alert = Alert(
-            level=AlertLevel.ERROR,
-            code=code,
-            message=message,
-            run_id=self.run_id,
+        self.incidents.record(
+            code,
+            AlertLevel.ERROR,
+            message,
+            probe=probe,
             game_id=game_id,
             move_no=move_no,
-            screen_state=probe.state.value,
             board_hex=board_hex,
             attempt=attempt,
-            incident_dir=bundle.as_posix(),
-            extra=extra or {},
+            attempts=attempts,
+            retry_policy=policy.describe(),
+            stage=stage,
+            extra=extra,
         )
-        self.alerts.write(alert)
-        incidents.write_alert_copy(bundle, alert)
-        self._ops_event(alert)
 
         image = self._recover_once(code, probe, game_id=game_id, move_no=move_no)
         self._ops_event_simple(
@@ -318,12 +375,14 @@ class Supervisor:
                     AlertCode.GAME_OVER_UNEXPECTED,
                     f"restart flow: after 'Нова гра' tap got {after.state.value}",
                     probe=after,
+                    stage="restart",
                 )
         else:
             self.fatal(
                 AlertCode.GAME_OVER_UNEXPECTED,
                 f"restart flow: cannot start from state {probe.state.value}",
                 probe=probe,
+                stage="restart",
             )
         self._sleep(self.config.settle_delay_s)
         # The «Нова гра» tap above may have kicked the app into re-auth (expired
@@ -347,6 +406,8 @@ class Supervisor:
                 f"restart flow: expected fresh GAME, got {verify.state.value} "
                 f"(board_match_frac={verify.board_match_frac:.2f})",
                 probe=verify,
+                stage="restart",
+                attempts=(WIN_BLIND_VERIFY_REPOLLS + 1) if after_win else 1,
             )
         assert verify.image is not None
         if self.ring is not None:
@@ -387,27 +448,33 @@ class Supervisor:
         attempt: int | None = None,
         extra: dict[str, Any] | None = None,
         traceback_text: str | None = None,
+        stage: str | None = None,
+        attempts: int | None = None,
     ) -> NoReturn:
-        """FATAL stop (§5): bundle + FATAL alert, then raise. NO taps."""
-        bundle = self._bundle(code, probe, traceback_text=traceback_text)
-        alert = Alert(
-            level=AlertLevel.FATAL,
-            code=code,
-            message=message,
-            run_id=self.run_id,
+        """FATAL stop (§5): bundle + FATAL alert, then raise. NO taps.
+
+        A FATAL right after an ERROR of the same code (the failed recovery
+        cycle) is CHAINED into the ERROR's bundle by the sink -- one incident,
+        one folder (``alert_fatal.json`` / ``screenshot_fatal.png``).
+        """
+        policy = policy_for(code)
+        record = self.incidents.record(
+            code,
+            AlertLevel.FATAL,
+            message,
+            probe=probe,
             game_id=game_id,
             move_no=move_no,
-            screen_state=probe.state.value if probe is not None else None,
             board_hex=board_hex,
             attempt=attempt,
-            incident_dir=bundle.as_posix(),
-            extra=extra or {},
+            attempts=attempts if attempts is not None else policy.max_attempts,
+            retry_policy=policy.describe(),
+            stage=stage or _default_stage(code, message),
+            extra=extra,
+            traceback_text=traceback_text,
         )
-        self.alerts.write(alert)
-        incidents.write_alert_copy(bundle, alert)
-        self._ops_event(alert)
         log.error("supervisor.fatal", code=code.value, message=message)
-        raise FatalIncident(alert)
+        raise FatalIncident(record.alert)
 
     # -- internals -------------------------------------------------------------
 
@@ -477,6 +544,8 @@ class Supervisor:
                 probe=probe,
                 game_id=game_id,
                 move_no=move_no,
+                stage="recovery",
+                attempts=1,
             )
 
         verify = probe_screen(self.device, self.classify)
@@ -492,6 +561,8 @@ class Supervisor:
             probe=verify,
             game_id=game_id,
             move_no=move_no,
+            stage="recovery",
+            attempts=1,
         )
 
     def _repoll_or_fatal(
@@ -541,59 +612,9 @@ class Supervisor:
             probe=latest,
             game_id=game_id,
             move_no=move_no,
+            stage="recovery",
+            attempts=self.config.transient_repolls + 1,
         )
-
-    def _bundle(
-        self,
-        code: AlertCode,
-        probe: ProbeResult | None,
-        *,
-        traceback_text: str | None = None,
-    ) -> Path:
-        return incidents.create_bundle(
-            code.value,
-            root=self.config.incidents_root,
-            screenshot_before=self.ring.good_frame if self.ring is not None else None,
-            screenshot_after=probe.image if probe is not None else None,
-            uidump_xml=probe.uidump_xml if probe is not None else None,
-            last_moves=self.ring.snapshot() if self.ring is not None else [],
-            state_probe=(
-                {
-                    "state": probe.state.value,
-                    "reason": probe.reason,
-                    "board_match_frac": probe.board_match_frac,
-                }
-                if probe is not None
-                else None
-            ),
-            traceback_text=traceback_text,
-            context={"run_id": self.run_id},
-        )
-
-    def _ops_event(self, alert: Alert) -> None:
-        """Duplicate the alert into live_events; DB trouble = WARN, not a stop."""
-        if self.ops is None or self.run_id is None:
-            return
-        try:
-            self.ops.record_event(
-                self.run_id,
-                alert.level.value,
-                alert.code.value,
-                alert.message,
-                game_id=alert.game_id,
-                ply=alert.move_no,
-                details=alert.extra,
-                incident_dir=alert.incident_dir,
-            )
-        except StorageError as exc:
-            self.alerts.write(
-                Alert(
-                    level=AlertLevel.WARN,
-                    code=AlertCode.STORAGE_ERROR,
-                    message=f"live_events write failed: {exc}",
-                    run_id=self.run_id,
-                )
-            )
 
     def _ops_event_simple(
         self,

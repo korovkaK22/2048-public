@@ -85,7 +85,7 @@ import threading
 import time
 import uuid
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, NoReturn, Protocol
@@ -118,7 +118,7 @@ from bot2048.runner.bg_detect import BackgroundStateProbe, StateProbe
 from bot2048.runner.budget_ladder import BudgetLadder
 from bot2048.runner.debug_capture import DEBUG_CAPTURE_REASONS, DebugCapture
 from bot2048.runner.errors import LiveLoopError
-from bot2048.runner.escalation import ProbeResult, probe_screen
+from bot2048.runner.escalation import ProbeResult, policy_for, probe_screen
 
 # Game-end notification formatting lives in game_end_notify.py; the names are
 # re-exported here (``__all__`` / the ``noqa`` re-exports) because tests and
@@ -302,6 +302,8 @@ class GameSupervisor(Protocol):
         board_hex: str | None = ...,
         attempt: int | None = ...,
         extra: dict[str, Any] | None = ...,
+        stage: str | None = ...,
+        attempts: int | None = ...,
     ) -> Image: ...
 
     def start_new_game(self, *, after_win: bool = ...) -> tuple[float, Image]: ...
@@ -314,6 +316,8 @@ class GameSupervisor(Protocol):
         probe: ProbeResult | None = ...,
         game_id: str | None = ...,
         move_no: int | None = ...,
+        stage: str | None = ...,
+        attempts: int | None = ...,
     ) -> NoReturn: ...
 
 
@@ -450,6 +454,27 @@ class LiveRunner:
         # with the loop's own full-frame captures (shared adb channel).
         self._bg_detect: StateProbe | None = bg_detect
         self._capture_lock = threading.Lock()
+        # THE incident path (docs/ops-monitoring.md §4). Shared with the
+        # supervisor when it exposes its sink (one chain/dedupe state, one
+        # prune budget for the whole session); a bare fake supervisor gets a
+        # runner-owned sink. The ring carries the FRESH-capture hook so every
+        # sink in the process -- this one, the supervisor's, the lifecycle
+        # CRASH handler's -- can screenshot the phone at incident time.
+        shared_sink = getattr(supervisor, "incidents", None)
+        self._incidents: incidents.IncidentSink = (
+            shared_sink
+            if isinstance(shared_sink, incidents.IncidentSink)
+            else incidents.IncidentSink(
+                root=self.incidents_root,
+                alerts=self.alerts,
+                ops=self.ops,
+                run_id=self.run_id,
+                ring=self.ring,
+            )
+        )
+        self._incidents.context_provider = self._incident_context
+        if self.ring is not None:
+            self.ring.set_capture(self._incident_capture)
         # Auth-wall flow (R5): opt-in auto-login for the main loop
         # (``handle_auth``) and the restart flow (``resolve_restart_auth``). The
         # PIN-entry security contract is enforced entirely inside this module.
@@ -489,7 +514,7 @@ class LiveRunner:
             clock=lambda: self._clock(),
             sleep=lambda seconds: self._sleep(seconds),
             alerts=self.alerts,
-            incidents_root=self.incidents_root,
+            incidents=self._incidents,
             run_id=self.run_id,
             notify=self._notify,
             reconnect=self.reconnect,
@@ -521,6 +546,9 @@ class LiveRunner:
             notify=self._notify,
             ring=self.ring,
         )
+        # The frame behind the latest parse (``screenshot_last_parsed.png`` in
+        # every bundle) lives in the gate; hand the sink a live accessor.
+        self._incidents.last_frame_provider = lambda: self._gate.last_frame
         # On-error debug bundles (screenshot + APK packet + boards): built here
         # so the SwipeController's occlusion/mismatch hooks and this runner's
         # game-abort finalization share ONE sink (same dir, same prune bound,
@@ -1046,6 +1074,9 @@ class LiveRunner:
                     gate_hit=move_counts["gate_hit"],
                     **{key: round(value, 2) for key, value in timing.items()},
                 )
+                # Link the abort row to the incident bundle the supervisor just
+                # wrote for this move (VISION_MISMATCH / MOVE_REJECTED), so
+                # game_id + move_no -> live_events -> bundle is one SQL hop.
                 self._ops_info(
                     "MOVE_ABORTED",
                     f"{abort_reason} at ply {state.ply}",
@@ -1056,6 +1087,7 @@ class LiveRunner:
                         "move": move_counts,
                         "end_reason": abort_reason,
                     },
+                    incident_dir=self._incidents.last_dir,
                 )
                 return self._end_game(state, abort_reason)
             # Budget ladder (brief §3): the move committed, the board advanced
@@ -1623,6 +1655,7 @@ class LiveRunner:
         game_id: str | None,
         ply: int | None,
         details: dict[str, Any] | None = None,
+        incident_dir: str | None = None,
     ) -> None:
         if self.ops is None or self.run_id is None:
             return
@@ -1635,9 +1668,84 @@ class LiveRunner:
                 game_id=game_id,
                 ply=ply,
                 details=details,
+                incident_dir=incident_dir,
             )
         except StorageError as exc:
             log.warning("live.ops_event_failed", code=code, error=str(exc))
+
+    # -- incident tracing hooks (docs/ops-monitoring.md §4) ------------------------
+
+    def _incident_capture(self) -> Image | None:
+        """FRESH full-frame screencap for an incident bundle (ring capture hook).
+
+        Raw ``device.screenshot`` (a one-off diagnostic, not per-move latency
+        telemetry) behind the shared capture lock -- bounded: if the bg-detect
+        worker holds the lock for longer than a few seconds the device is in
+        trouble anyway, and the sink records the failure instead of hanging the
+        incident path. Exceptions propagate to :meth:`MoveRing.fresh_frame`,
+        which turns them into the bundle's ``capture_error``.
+        """
+        if not self._capture_lock.acquire(timeout=5.0):
+            raise TimeoutError("capture lock busy for 5 s (bg-detect worker stuck?)")
+        try:
+            return self.device.screenshot()
+        finally:
+            self._capture_lock.release()
+
+    def _incident_context(self) -> dict[str, Any]:
+        """Session context for ``context.json["session"]`` + the v2 alert fields.
+
+        Everything is read defensively through ``getattr``: strategies are
+        duck-typed (a scripted test strategy has no limits/engine), and a
+        context accessor must never break the incident it describes.
+        """
+        strat: Any = self.strategy
+        spec = getattr(strat, "spec", None)
+        spec_hash = getattr(strat, "spec_hash", None) or getattr(spec, "spec_hash", None)
+        engine: dict[str, Any] = {"kind": type(strat).__name__}
+        info = getattr(strat, "engine_info", None)
+        if isinstance(info, Mapping) and info:
+            engine["info"] = dict(info)
+        for key in ("depth", "budget_ms", "farm", "protocol"):
+            value = getattr(strat, key, None)
+            if isinstance(value, bool | int | float | str):
+                engine[key] = value
+        limits = getattr(strat, "limits", None)
+        if limits is not None:
+            engine["limits"] = {
+                k: getattr(limits, k, None) for k in ("max_depth", "budget_ms", "max_nodes")
+            }
+        cfg = self.config
+        return {
+            "strategy": self._strategy_label(),
+            "spec_hash": spec_hash if isinstance(spec_hash, str) else None,
+            "engine": engine,
+            "experiment_id": cfg.experiment_id,
+            "capture_mode": "apk" if self.board_source is not None else "frame",
+            "retry_table": {
+                code.value: policy_for(code).describe()
+                for code in (
+                    AlertCode.MOVE_REJECTED,
+                    AlertCode.VISION_MISMATCH,
+                    AlertCode.SCREEN_UNEXPECTED,
+                    AlertCode.DEVICE_LOST,
+                    AlertCode.LOOP_ERROR,
+                    AlertCode.AUTH_REQUIRED,
+                )
+            },
+            "config": {
+                "swipe_retries": cfg.swipe_retries,
+                "swipe_retry_delay_s": cfg.swipe_retry_delay_s,
+                "parse_retries": cfg.parse_retries,
+                "occlusion_max_retries": cfg.occlusion_max_retries,
+                "auth_retries": cfg.auth_retries,
+                "auto_login": cfg.auto_login,
+                "recover_max_per_hour": cfg.recover_max_per_hour,
+                "settle_delay_s": cfg.settle_delay_s,
+                "predict_gate": cfg.predict_gate,
+                "swipe_duration_ms": cfg.swipe_duration_ms,
+            },
+        }
 
     def _note_game_ended(self, state: _GameState, end_reason: str) -> None:
         """Track consecutive very-short games and alert on a churn loop.
@@ -1680,21 +1788,23 @@ class LiveRunner:
             f"burning the run window; clean game-overs/aborts are not gated by "
             f"recover_max_per_hour"
         )
-        self.alerts.write(
-            Alert(
-                level=AlertLevel.ERROR,
-                code=AlertCode.RESTART_LOOP,
-                message=message,
-                run_id=self.run_id,
-                game_id=state.game_id,
-                move_no=state.ply,
-                extra={
-                    "streak": streak,
-                    "limit": limit,
-                    "min_ply": self.config.low_score_churn_min_ply,
-                    "end_reason": end_reason,
-                },
-            )
+        # ONE incident path: bundle (fresh screenshot -- what IS the phone
+        # showing between these short games?) + alert + live_events row.
+        self._incidents.record(
+            AlertCode.RESTART_LOOP,
+            AlertLevel.ERROR,
+            message,
+            game_id=state.game_id,
+            move_no=state.ply,
+            attempts=streak,
+            retry_policy=policy_for(AlertCode.RESTART_LOOP).describe(),
+            stage="session",
+            extra={
+                "streak": streak,
+                "limit": limit,
+                "min_ply": self.config.low_score_churn_min_ply,
+                "end_reason": end_reason,
+            },
         )
         self._notify(
             "ERROR",

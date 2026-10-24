@@ -262,8 +262,13 @@ class SwipeController:
                     extra={
                         "board_before": board_to_hex(state.board),
                         "board_predicted": board_to_hex(predicted.board),
+                        "board_parsed": board_to_hex(parsed),
                         "direction": decision.direction.name,
+                        "swipe_attempt": attempt,
+                        "occlusion_max_retries": self.config.occlusion_max_retries,
                     },
+                    stage="verify",
+                    attempts=self.config.parse_retries,
                 )
                 return "vision_mismatch"
             # outcome == "unchanged": the swipe did not register; retry it.
@@ -295,6 +300,8 @@ class SwipeController:
                 "board_before": board_before_hex,
                 "board_predicted": board_to_hex(predicted.board),
             },
+            stage="swipe",
+            attempts=attempts,
         )
         return "move_rejected"
 

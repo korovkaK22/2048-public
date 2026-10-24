@@ -22,7 +22,7 @@ from .config import (
     SENT_JOURNAL_PATH,
     TgConfig,
 )
-from .notifier import TgNotifier
+from .notifier import TgNotifier, incident_photo
 
 log = structlog.get_logger(__name__)
 
@@ -99,13 +99,7 @@ def watch(
                 if (ts, code) in _load_sent_journal(root):
                     new_cursor = idx + 1
                     continue
-                photo = None
-                if row.get("incident_dir"):
-                    for name in ("screenshot_after.png", "screenshot_before.png"):
-                        cand = root / row["incident_dir"] / name
-                        if cand.is_file():
-                            photo = str(cand)
-                            break
+                photo = incident_photo(root, row.get("incident_dir"), str(level))
                 notifier.notify(level, code, row.get("message", ""), photo, alert_ts=ts)
                 new_cursor = idx + 1
             if new_cursor != cursor:
