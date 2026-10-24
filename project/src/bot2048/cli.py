@@ -4,7 +4,7 @@ Each domain module owns its own typer sub-app:
     sim/cli.py      -> app  (registered as "sim")
     storage/cli.py  -> app  (registered as "db")
     vision/cli.py   -> app  (registered as "vision")
-    runner/cli.py   -> app  (registered as "live")
+    runner/cli/     -> app  (registered as "live")
 
 Sub-apps are registered lazily so a missing/broken module never blocks the
 others (important while modules are developed in parallel).
