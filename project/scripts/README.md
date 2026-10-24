@@ -8,7 +8,7 @@
 | `setup/` | setup (device + engines) | `setup_adb.sh`, `fetch_weights.sh` |
 | `live/` | live | `live.sh`, `watch.sh`, `tg_send.sh`, `_host_env.sh` |
 | `macos/` | macos-support | `setup.sh`, `install.sh`, launchd-шаблони — [`macos/README.md`](macos/README.md) |
-| `dev/` | dev | `new-worktree.sh`, `rm-worktree.sh` |
+| `dev/` | dev | `new-worktree.sh`, `rm-worktree.sh`, `import_graph.py` |
 
 Усі запускаються з `project/` (лаунчери самі `cd` куди треба), якщо не сказано інше.
 
@@ -50,6 +50,7 @@
 | скрипт | призначення | запуск |
 |---|---|---|
 | `new-worktree.sh` / `rm-worktree.sh` | git-worktree для паралельної роботи зі спільним venv (junction на Windows); прибирати ТІЛЬКИ `rm-worktree.sh` — див. `CLAUDE.md` | `project/scripts/dev/new-worktree.sh feat/x` · `project/scripts/dev/rm-worktree.sh feat/x` |
+| `import_graph.py` | реальний граф імпортів між підпакетами `bot2048` (AST, без імпорту коду): static / lazy / `TYPE_CHECKING`; джерело для `docs/components.md` і контрактів import-linter | `$PY scripts/dev/import_graph.py [--dot\|--json]` |
 
 Python-обгортки Telegram-моста напряму (те саме через `.venv`; `$PY` = `.venv/bin/python` або `.venv/Scripts/python.exe`):
 
