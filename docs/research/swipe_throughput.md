@@ -1,8 +1,8 @@
 # Пропускна здатність вводу свайпів (2048 у monobank)
 
 Дата: 2026-07-11. Девайс: Xiaomi (MIUI), 1080x2400, під'єднаний по adb.
-Скрипт: `research/scripts/measure_swipes.py` (режими `baseline` / `persistent` / `dursweep` / `burst`).
-Сирі логи: `research/raw/*.json`. Свайпи — в межах ігрової дошки (bbox з калібрування проєкту), випадкові напрямки.
+Скрипт: `project/research/scripts/measure_swipes.py` (режими `baseline` / `persistent` / `dursweep` / `burst`).
+Сирі логи: `project/research/raw/*.json`. Свайпи — в межах ігрової дошки (bbox з калібрування проєкту), випадкові напрямки.
 
 ## 1. Метод × швидкість
 

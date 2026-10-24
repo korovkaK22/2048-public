@@ -9,7 +9,7 @@ metadata:
 
 Derived rigorously 2026-07-21 (4 parallel agents: rules + DP + constructive + Fable). The competitor top-1 hit **58k**, which forced a strict re-derivation. **Two earlier numbers I quoted were WRONG — never repeat them:**
 - **51,529** — WRONG. That's the max for a board with ONE 1024 (classic monotone snake). Not the ceiling.
-- **100,262** (docs/audit-2026-07-11.md §3.2) — WRONG. Arithmetic slip: mixed a legality bound with an expected 4-penalty on a sub-optimal board. Also its whole per-k table (44245, 58813, …) is not divisible by 4, so cannot be exact scores.
+- **100,262** (docs/archive/audit-2026-07-11.md §3.2) — WRONG. Arithmetic slip: mixed a legality bound with an expected 4-penalty on a sub-optimal board. Also its whole per-k table (44245, 58813, …) is not divisible by 4, so cannot be exact scores.
 
 **Rules (confirmed):** forming 2048 = terminal WIN (popup «Ви зібрали 2048!» → only «Нова гра»; cash-out +2048 is just the merge value, not a separate bonus). So **max tile is capped at 1024**. No app move/time limit (timer cosmetic). This 1024-cap is the SINGLE hard ceiling: if 2048 didn't end the game, max would jump to 237,568 (cap 2048) / 524,288 (cap 4096).
 

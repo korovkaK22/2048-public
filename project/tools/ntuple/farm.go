@@ -113,14 +113,14 @@ func nibblePlanes(board uint64) (b3, b2, b1, b0 uint64) {
 // below is preserved (all late weights stay >= 0).
 //
 // STRUCTURAL TERMS (added to break the ~2x1024 / ~32k ceiling — see
-// research/path_to_50k.md): a snake positional gradient that orders the big
+// docs/research/path_to_50k.md): a snake positional gradient that orders the big
 // tiles into a descending wall from one corner (the "build lane" that feeds
 // the next 1024 reservoir), plus a RANK-scaled corner bonus so a 1024 parked
 // in a corner is worth far more than a 256 there (the flat corner term alone
 // made 256-in-corner == 1024-in-corner and saturated after two corners). The
 // staircase term is enabled by default (it packed 1024|512 walls in sweeps).
 //
-// ENDGAME EMPTY-CONVEXITY (research/path_to_50k.md §3.4): once the board
+// ENDGAME EMPTY-CONVEXITY (docs/research/path_to_50k.md §3.4): once the board
 // already holds >= 2 big reservoirs (rank >= 9) AND is running low on space,
 // this term rewards the CONTIGUITY of the remaining empty cells — the number
 // of orthogonally-adjacent empty|empty pairs — NOT their raw count (that is
@@ -172,7 +172,7 @@ var (
 	// parked big tile, so finished 1024s form dense walls instead of blocking
 	// the interior. Counted per orientation (rows + columns), like merges.
 	// Default 120: enabled (edge/stair were the positive levers on the tail in
-	// the depth-5/6 sweeps; see research/path_to_50k.md §2.3).
+	// the depth-5/6 sweeps; see docs/research/path_to_50k.md §2.3).
 	farmStairWeight = 120.0
 	// farmSnakeWeight: overall weight of the snake positional-gradient term,
 	// Sum over cells of posW[cell] * 2^rank(cell), where posW decreases along a

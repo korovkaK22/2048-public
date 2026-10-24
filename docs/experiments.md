@@ -4,8 +4,8 @@
 > (мета: побити лідера 47k → цільові 50k / чотири 1024). Один конфіг, одна
 > команда, самодостатня підпапка результатів, яку можна зіпнути й перенести.
 >
-> Контекст стратегії — `project/research/path_to_50k.md`. Масштабування на
-> ARM — `project/research/arm_20core_scaling.md`. Farm-ваги живуть у
+> Контекст стратегії — `docs/research/path_to_50k.md`. Масштабування на
+> ARM — `docs/research/arm_20core_scaling.md`. Farm-ваги живуть у
 > `project/tools/engine2048/farm.go`.
 
 ## 0. TL;DR (один прогін)

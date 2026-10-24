@@ -45,7 +45,7 @@
 
 ## 2. Топ-30 найповільніших тестів (серійний прогін, call-time)
 
-Джерело: `research/test_speed/run_full_module.txt` (`--durations=50`).
+Джерело: `project/research/test_speed/run_full_module.txt` (`--durations=50`).
 
 | # | s | Тест | Файл | Причина |
 |---|-----|------|------|---------|
@@ -90,7 +90,7 @@
 
 ### 3.1. ffmpeg-декод контеншн (scrcpy + minicap) — ГОЛОВНИЙ блокер
 
-**Доказ:** `research/test_speed/xdist_auto.txt` — `scrcpy.capture_attempt_failed attempt=1 error='no decoded frame within 10.0s'` та `[WinError 10038] not a socket`. Ізольовано ці тести **проходять**: `test_scrcpy.py` під `-n4` → `44 passed in 9.75s`, `test_vision_cli` під `-n2` → pass. Падають ЛИШЕ у повному `-n auto`, коли 8 воркерів одночасно спавнять реальні ffmpeg-процеси → CPU голодує → ffmpeg не встигає видати перший кадр за `first_frame_timeout_s=10.0` (коментар у test_scrcpy.py:88-92 прямо описує повільний старт ffmpeg на Windows під навантаженням) → retry-ланцюг × ~10s.
+**Доказ:** `project/research/test_speed/xdist_auto.txt` — `scrcpy.capture_attempt_failed attempt=1 error='no decoded frame within 10.0s'` та `[WinError 10038] not a socket`. Ізольовано ці тести **проходять**: `test_scrcpy.py` під `-n4` → `44 passed in 9.75s`, `test_vision_cli` під `-n2` → pass. Падають ЛИШЕ у повному `-n auto`, коли 8 воркерів одночасно спавнять реальні ffmpeg-процеси → CPU голодує → ffmpeg не встигає видати перший кадр за `first_frame_timeout_s=10.0` (коментар у test_scrcpy.py:88-92 прямо описує повільний старт ffmpeg на Windows під навантаженням) → retry-ланцюг × ~10s.
 
 **Не потрібно** прискорювати кожен тест. Потрібно **не давати їм спавнити ffmpeg одночасно**: помістити всі `@requires_ffmpeg` тести scrcpy + декод-тести minicap у **один xdist_group** → вони йдуть послідовно на ОДНОМУ воркері (~10s разом), поки інші 7 воркерів жують Python-масу. Storm зникає.
 
@@ -178,7 +178,7 @@ def pytest_collection_modifyitems(items):
 
 ---
 
-## Провенанс (сирі логи у `research/test_speed/`)
+## Провенанс (сирі логи у `project/research/test_speed/`)
 
 - `run_full_module.txt` — серійний `--durations=50` (джерело топ-30).
 - `serial_time.txt`, `serial_summary.txt` — серійний wall-clock 55.8s.

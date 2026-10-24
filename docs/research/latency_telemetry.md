@@ -354,7 +354,7 @@ WHERE g.experiment_id = :exp AND m.ply >= 0;
 
 ## 7. Пріоритет: які 2–3 фази найімовірніше слабина (гіпотеза)
 
-З `research/early_spawn_detection.md` (анімація ходу ≈115 мс, а happy-path settle
+З `early_spawn_detection.md` (анімація ходу ≈115 мс, а happy-path settle
 ≈2.0 с screencap / ≈0.85 с стрім) і структури циклу:
 
 1. **`settle_sleep_ms` (фаза 4) — найімовірніша слабина №1.** Фіксований

@@ -12,7 +12,7 @@ second pass over the game. Everything is derived from the DECISION states — th
 board the bot actually faced at ply *t* (``MovePlayed.board_before``) — which is
 the state a risk model must condition on.
 
-What it derives, and why each thing is here (docs/audit-2026-07-11.md §3.3,
+What it derives, and why each thing is here (docs/archive/audit-2026-07-11.md §3.3,
 docs/tail-analysis.md):
 
 * **reservoir birth schedule** — the ply the k-th 1024 first appeared. Measured
