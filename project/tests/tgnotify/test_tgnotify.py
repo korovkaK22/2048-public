@@ -45,8 +45,8 @@ CHAT_ID = "100000001"
 
 @pytest.fixture(autouse=True)
 def _fast(monkeypatch: pytest.MonkeyPatch):
-    """No rate-limit sleeps in tests."""
-    monkeypatch.setattr(tgnotify, "_RATE_LIMIT_S", 0.0)
+    """No rate-limit sleeps in tests (the constant lives in the transport module)."""
+    monkeypatch.setattr(tgnotify.transport, "_RATE_LIMIT_S", 0.0)
 
 
 def make_notifier(tmp_path: Path, api=None, **kw) -> TgNotifier:
