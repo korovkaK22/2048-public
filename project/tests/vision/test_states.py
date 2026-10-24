@@ -42,6 +42,7 @@ def load_incident_frame() -> Image:
     except MissingImageBackendError as exc:  # pragma: no cover - env-dependent
         pytest.skip(str(exc))
 
+
 GAME_FIXTURES = [
     "board_256.png",
     "board_32.jpg",
@@ -87,6 +88,20 @@ WIN_POPUP_FIXTURES = [
 GAME_OVER_POPUP_FIXTURES = [
     "game_over_popup.png",
     "game_over_popup_tall.png",
+]
+
+#: «Синхронізація… Очікуємо дані для наступного раунду» overlay captures,
+#: PANEL-ONLY crops (``load_panel``). The app dims the live board and draws a
+#: card + translucent «Вийти» button over it while it waits for the server.
+#: Two measured vertical layouts (2-line vs 3-line text shifts the card
+#: ~60 px): incident 20260711T204021Z (score 34 056, game aborted FATAL as
+#: NOT_IN_GAME 44%) and incident 20260712T192946Z (score 13 740, same). Seven
+#: i7 incidents + three game-screen captures died this way: the board under
+#: the overlay only half-matches, so the frame fell through to NOT_IN_GAME
+#: and the supervisor FATALed a healthy, merely waiting game.
+SYNC_OVERLAY_FIXTURES = [
+    "sync_overlay.png",
+    "sync_overlay_tall.png",
 ]
 
 
@@ -238,6 +253,77 @@ def test_game_over_anchors_are_optional(
         assert detection.state is not ScreenState.GAME
 
 
+@pytest.mark.parametrize("name", SYNC_OVERLAY_FIXTURES)
+def test_sync_overlay_detected(
+    name: str,
+    load_panel: Callable[[str], Image],
+    calib: Calibration,
+    anchors: StateAnchors,
+) -> None:
+    """Both «Синхронізація…» layouts classify as SYNC_OVERLAY, not NOT_IN_GAME.
+
+    Regression for incidents 20260711T204021Z / 20260712T192946Z /
+    20260712T193021Z / 20260713T071357Z: the dimmed board measured 0.44..0.69
+    and the live loop FATALed («no safe recovery action in state
+    not_in_game») on a game that was merely waiting for the server.
+    """
+    detection = detect_state(load_panel(name), calib, anchors)
+    assert detection.state is ScreenState.SYNC_OVERLAY
+    assert "sync anchors" in detection.reason
+
+
+@pytest.mark.parametrize("name", SYNC_OVERLAY_FIXTURES)
+def test_sync_overlay_is_not_a_board_nor_a_popup(
+    name: str,
+    load_panel: Callable[[str], Image],
+    calib: Calibration,
+    anchors: StateAnchors,
+) -> None:
+    """The overlay must never read as a swipeable board or as a tappable popup."""
+    detection = detect_state(load_panel(name), calib, anchors)
+    assert detection.state not in (
+        ScreenState.GAME,
+        ScreenState.WIN_POPUP_2048,
+        ScreenState.GAME_OVER_POPUP,
+        ScreenState.CONFIRM_NEW_GAME,
+    )
+
+
+@pytest.mark.parametrize(
+    "name",
+    [*GAME_FIXTURES, *WIN_POPUP_FIXTURES, *GAME_OVER_POPUP_FIXTURES, "confirm_new_game.jpg"],
+)
+def test_no_old_fixture_classifies_as_sync_overlay(
+    name: str,
+    load_image: Callable[[str], Image],
+    calib: Calibration,
+    anchors: StateAnchors,
+) -> None:
+    """Regression: adding the sync anchors must not reclassify anything.
+
+    The anchors sit in the board's column gaps, which are dark on every real
+    board and white/sky/teal on every popup card -- never the overlay's gray.
+    """
+    detection = detect_state(load_image(name), calib, anchors)
+    assert detection.state is not ScreenState.SYNC_OVERLAY
+
+
+def test_sync_anchors_are_optional(
+    load_panel: Callable[[str], Image], calib: Calibration, anchors: StateAnchors
+) -> None:
+    """A bundle without sync anchors still loads; the overlay then degrades to
+    the pre-fix non-GAME classification (fail-open), never a false SYNC/GAME."""
+    data: dict[str, Any] = anchors.to_dict()
+    for key in ("sync_btn_left", "sync_btn_center", "sync_btn_right", "sync_gap_left"):
+        del data["anchors"][key]
+    stripped = StateAnchors.from_dict(data)
+    for name in SYNC_OVERLAY_FIXTURES:
+        detection = detect_state(load_panel(name), calib, stripped)
+        assert detection.state is ScreenState.NOT_IN_GAME
+        # documents the old failure: the dimmed board is below the GAME gate
+        assert detection.board_match_frac < anchors.board_match_min_frac
+
+
 def test_a_few_odd_cells_do_not_flip_a_board_off(
     paint_board: Callable[[Sequence[int]], Image],
     calib: Calibration,
@@ -328,6 +414,14 @@ def test_black_frame_is_screen_off(calib: Calibration, anchors: StateAnchors) ->
 def test_gray_frame_is_not_in_game(calib: Calibration, anchors: StateAnchors) -> None:
     gray = np.full((2400, 1080, 3), 128, dtype=np.uint8)
     assert detect_state(gray, calib, anchors).state is ScreenState.NOT_IN_GAME
+
+
+def test_uniform_gray_is_not_sync_overlay(calib: Calibration, anchors: StateAnchors) -> None:
+    """A flat gray surface near the «Вийти» button's gray must NOT read as the
+    sync overlay: the dark-gap anchor left of the button rejects it."""
+    gray = np.full((2400, 1080, 3), (142, 141, 144), dtype=np.uint8)
+    detection = detect_state(gray, calib, anchors)
+    assert detection.state is ScreenState.NOT_IN_GAME
 
 
 def test_board_without_hud_is_unknown(

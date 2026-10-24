@@ -168,6 +168,29 @@ STATE_ANCHORS_DICT: dict[str, object] = {
         "game_over_card_tall": {"xy": [540, 630], "rgb": [105, 220, 215], "tol": 40},
         "game_over_btn_left_tall": {"xy": [430, 1520], "rgb": [108, 147, 178], "tol": 40},
         "game_over_btn_right_tall": {"xy": [650, 1520], "rgb": [108, 147, 178], "tol": 40},
+        # «Синхронізація… Очікуємо дані для наступного раунду» overlay
+        # (SYNC_OVERLAY): the whole screen dims and a card with that text plus
+        # a translucent light-gray «Вийти» button is drawn OVER the board.
+        # Measured on tests/vision/fixtures/sync_overlay.png (incident
+        # 20260711T204021Z, 2-line text, button rows ~y1290..1390) and
+        # sync_overlay_tall.png (incident 20260712T192946Z, 3-line text, button
+        # ~y1350..1450) plus 8 more i7 frames: the button is translucent, so it
+        # takes the color of whatever tile sits under it -- EXCEPT over the
+        # board's dark column gaps (x~324..340, ~532..556, ~736..756), where it
+        # measures (142,141,144) in every frame. y1370 is the row both layouts
+        # share. All ten frames measure distance 0 on all three anchors; on a
+        # real board the gaps are dark (~19,14,30, distance ~200), on the
+        # win/game-over/confirm cards they are white/sky/teal -- none of the
+        # 457 frames on record matches even two of the three. ``sync_gap_left``
+        # is the dimmed column gap just LEFT of the button edge (the button
+        # starts at x~322): (9,7,16)..(10,7,16) on all ten overlay frames. It
+        # does not separate the overlay from a board (dark there too) -- it
+        # rejects a uniformly gray screen that would satisfy the three gray
+        # anchors alone.
+        "sync_btn_left": {"xy": [338, 1370], "rgb": [142, 141, 144], "tol": 40},
+        "sync_btn_center": {"xy": [540, 1370], "rgb": [142, 141, 144], "tol": 40},
+        "sync_btn_right": {"xy": [748, 1370], "rgb": [142, 141, 144], "tol": 40},
+        "sync_gap_left": {"xy": [312, 1370], "rgb": [9, 7, 16], "tol": 30},
         # TODO(auth): measure the monobank re-login screen (AUTH_REQUIRED);
         # until then it classifies as NOT_IN_GAME/UNKNOWN, which the
         # supervisor treats with the same taps-forbidden pause policy.
