@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "random",
+  "notes": "Uniformly random legal move (ai/strategies.py RandomStrategy) -- the floor every other strategy must beat. Trivial kind: dispatched on the id; search settings are irrelevant and left at defaults.",
+  "engine": { "kind": "trivial", "weights": null, "env": {} },
+  "farm": false,
+  "stop_exponent": 11
+}

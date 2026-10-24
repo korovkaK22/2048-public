@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "id": "py-expectimax-d3",
+  "notes": "Pure-Python reference expectimax (ai/expectimax.py, DEFAULT_WEIGHTS heuristic), fixed depth 3 -- today's `--strategy expectimax` default in both sim and live CLIs. No process env. Deterministic: a conformance golden candidate.",
+  "engine": { "kind": "python", "weights": null, "env": {} },
+  "search": {
+    "limits": { "max_depth": 3, "budget_ms": null },
+    "guard": { "max_nodes": 50000000, "hang_timeout_s": 60 },
+    "cprob": 0.0001,
+    "adaptive": false,
+    "p4": 0.1,
+    "prefetch": false,
+    "workers": 1,
+    "ladder": null
+  },
+  "farm": false,
+  "stop_exponent": 11
+}

@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "corner",
+  "notes": "Fixed direction priority (ai/strategies.py CornerStrategy, default priority). Trivial kind: dispatched on the id; search settings are irrelevant and left at defaults.",
+  "engine": { "kind": "trivial", "weights": null, "env": {} },
+  "farm": false,
+  "stop_exponent": 11
+}

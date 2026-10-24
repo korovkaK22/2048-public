@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "id": "champion-l0003",
+  "notes": "A/B baseline for champion-live: the original champion net w-l0.003.bin with the RECORD ENGINE OFF (golden endgame). Identical search/ladder/pool settings to champion-live so the only differences are the net and the banker. With RECORD_ENGINE=0 the record levers are inert; they are pinned at the engine's compiled-in defaults (record.go newExactConfig: TARGET 49601, EXACT_EMPTIES 5, EXACT_NODES 3e6, TARGET_PCONF 0.95, EXACT_EARLYFIRE 0, EXACT_EARLY_EMPTIES 2 -- the code says 2 although its comment says 1 -- MAXCASH_DEPTH 8, SALVAGE_KAPPA 0). GOMAXPROCS/SEARCH_WORKERS carry the same Windows-live-box uncertainty as champion-live. fetch_weights.sh must fetch this net too (it currently ships only the wall snapshot).",
+  "engine": {
+    "kind": "ntuple",
+    "weights": "w-l0.003.bin",
+    "env": {
+      "GOMAXPROCS": "14",
+      "BOT2048_SEARCH_WORKERS": "12",
+      "BOT2048_CPROB_THRESH": "0.0001",
+      "BOT2048_FARM_EMPTY_W": "340",
+      "BOT2048_FARM_MERGE_W": "140",
+      "BOT2048_FARM_CORNER_W": "640",
+      "BOT2048_FARM_EDGE_W": "0",
+      "BOT2048_FARM_STAIR_W": "120",
+      "BOT2048_FARM_SNAKE_W": "0.25",
+      "BOT2048_FARM_SNAKE_RATIO": "0.85",
+      "BOT2048_FARM_CORNER_RANK_W": "160",
+      "BOT2048_FARM_CONVEX_W": "80",
+      "BOT2048_FARM_LATE_EMPTY_W": "120",
+      "BOT2048_FARM_LATE_GRAD_MULT": "2",
+      "BOT2048_FARM_LATE_CORNER_RANK_W": "320",
+      "BOT2048_FARM_HOARD_TRIGGER": "99",
+      "BOT2048_NTUPLE_MOB_W": "0",
+      "BOT2048_EVAL_MLP": "1",
+      "BOT2048_LEAF_CACHE": "1",
+      "BOT2048_RECORD_ENGINE": "0",
+      "BOT2048_TARGET": "49601",
+      "BOT2048_EXACT_EMPTIES": "5",
+      "BOT2048_EXACT_NODES": "3000000",
+      "BOT2048_TARGET_PCONF": "0.95",
+      "BOT2048_EXACT_EARLYFIRE": "0",
+      "BOT2048_EXACT_EARLY_EMPTIES": "2",
+      "BOT2048_MAXCASH_DEPTH": "8",
+      "BOT2048_SALVAGE_KAPPA": "0"
+    }
+  },
+  "search": {
+    "limits": { "max_depth": null, "budget_ms": 250 },
+    "guard": { "max_nodes": 50000000, "hang_timeout_s": 60 },
+    "cprob": 0.0001,
+    "adaptive": false,
+    "p4": 0.1,
+    "prefetch": true,
+    "workers": 12,
+    "ladder": {
+      "late_after_ply": 2067,
+      "late": { "max_depth": null, "budget_ms": 2000 },
+      "endgame_when_empty_le": 3,
+      "endgame_after_ply": null,
+      "endgame": { "max_depth": null, "budget_ms": 9000 }
+    }
+  },
+  "farm": false,
+  "stop_exponent": null
+}
