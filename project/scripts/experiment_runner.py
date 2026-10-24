@@ -30,7 +30,7 @@ It does NOT modify anything under core/ai/sim/storage — it only *uses*
 
 Usage (from project/):
     ./.venv/Scripts/python.exe scripts/experiment_runner.py CONFIG.json \
-        [--machine m4pro|windows|LABEL] [--workers N] [--shard IDX/COUNT] \
+        [--machine m4pro|m4|windows|LABEL] [--workers N] [--shard IDX/COUNT] \
         [--engine-bin PATH] [--record-db] [--out DIR]
 
 Prefer the thin wrapper ``scripts/experiment.sh CONFIG.json ...`` which just
@@ -115,6 +115,9 @@ def _apply_farm_env(weights: dict[str, Any]) -> None:
 # Per-machine defaults (task profile #4). Explicit --workers overrides these.
 MACHINE_PROFILES: dict[str, dict[str, int]] = {
     "m4pro": {"workers": 13, "gomaxprocs": 1},  # M4 Pro: 14 cores, leave 1 for OS
+    # Mac mini M4: 4P + 6E = 10 cores. 8 workers leaves the OS a core and, when
+    # the live runner shares the box, run with <= 4 (or `taskpolicy -b`) instead.
+    "m4": {"workers": 8, "gomaxprocs": 1},
     "windows": {"workers": max(1, (os.cpu_count() or 4) - 2), "gomaxprocs": 1},
 }
 
@@ -606,7 +609,7 @@ def main() -> None:
     parser.add_argument(
         "--machine",
         default=None,
-        help="Machine profile label (m4pro / windows / custom). Sets default "
+        help="Machine profile label (m4pro / m4 / windows / custom). Sets default "
         "workers + GOMAXPROCS and tags the run-id + perf.json.",
     )
     parser.add_argument("--workers", type=int, default=None, help="Override worker count.")
