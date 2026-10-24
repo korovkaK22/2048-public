@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    # Nightly macOS run (03:17 UTC) -- the arm64 job below is the only thing
+    # this trigger exists for; the ubuntu jobs run too, which is cheap.
+    - cron: "17 3 * * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -83,3 +87,77 @@ jobs:
       - name: Build
         run: go build ./...
         working-directory: project/tools/${{ matrix.engine }}
+
+  # The live host is an arm64 Mac mini (docs/macos-setup.md). This job is the
+  # only arm64/macOS coverage we have, and it is deliberately NOT run on pull
+  # requests: the repo is private and macOS minutes bill at 10x Linux. It runs
+  # on push to main, on manual dispatch and on the nightly schedule.
+  macos:
+    name: macos-14 (arm64) — python + both Go engines
+    if: github.event_name != 'pull_request'
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: project/pyproject.toml
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: |
+            project/tools/engine2048/go.mod
+            project/tools/ntuple/go.mod
+
+      # ffmpeg buys the scrcpy frame-source tests (they skip without it) and
+      # exercises the PATH-first ffmpeg resolution the Mac relies on.
+      - name: System deps
+        run: brew install ffmpeg
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,device]"
+
+      - name: Ruff
+        run: python -m ruff check src tests
+
+      - name: Mypy (strict)
+        run: python -m mypy src
+
+      - name: Pytest
+        run: python -m pytest
+
+      - name: Go vet + test -short (engine2048)
+        run: go vet ./... && go test -short ./...
+        working-directory: project/tools/engine2048
+
+      - name: Go vet + test -short (ntuple)
+        run: go vet ./... && go test -short ./...
+        working-directory: project/tools/ntuple
+
+      # Native arm64 build with -pgo=auto (no default.pgo in git -> a no-op
+      # here, but this is the exact command setup.sh runs on the Mac mini).
+      - name: Build engines (arm64, -pgo=auto)
+        run: |
+          (cd tools/engine2048 && go build -pgo=auto -o engine2048 .)
+          (cd tools/ntuple && go build -pgo=auto -o ntuple .)
+          file tools/engine2048/engine2048 tools/ntuple/ntuple
+
+      # Renders the launchd templates for this checkout and parses them with
+      # plistlib + plutil -- the only place the macOS install path gets run.
+      - name: Render + lint launchd templates
+        run: |
+          scripts/macos/install.sh --render "$RUNNER_TEMP/plists"
+          python - "$RUNNER_TEMP/plists" <<'EOF'
+          import plistlib, sys
+          from pathlib import Path
+          for p in sorted(Path(sys.argv[1]).glob("*.plist")):
+              with p.open("rb") as fh:
+                  d = plistlib.load(fh)
+              assert "@REPO@" not in str(d) and "@HOME@" not in str(d), p
+              print("ok", d["Label"], d["ProcessType"])
+          EOF
