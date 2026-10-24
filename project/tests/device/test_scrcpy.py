@@ -6,13 +6,28 @@ replaces the adb side, so no device is touched. Tests that need ffmpeg are
 skipped if it is not on PATH.
 
 Elementary-stream caveat baked into the assertions: without per-frame
-framing, ffmpeg's demux/parse pipeline holds the newest ~2-3 access units
-until further bytes (or EOF) arrive, and the exact count depends on how
-bytes group into demuxer reads (timing!). Held-open payloads therefore
-carry >= 6 trailing frames past whatever the assertion needs (measured
-floor: 6 frames -> >= 3 decoded across adversarial chunkings); EOF
-(``close_after``) flushes everything (decode is lossless -- see the
-``-fflags nobuffer`` note in ``device/scrcpy.py``).
+framing, ffmpeg's demux/parse pipeline holds the newest access units until
+further bytes (or EOF) arrive. Usually that is ~2 frames, but the exact
+count depends on how bytes group into demuxer reads (timing!) and, under
+load, this ffmpeg build occasionally holds the ENTIRE short clip (measured:
+0 of 6 frames out of a held-open stream in ~1-3% of pipelines, all 6 on
+EOF). The real device never leaves ffmpeg hanging like that: scrcpy-server
+configures MediaCodec with ``KEY_REPEAT_PREVIOUS_FRAME_AFTER = 100 ms``, so a
+static screen keeps re-emitting its last frame. :class:`FakeStreamServer`
+models exactly that -- a held-open connection repeats the payload's last
+frame every :data:`KEEPALIVE_INTERVAL_S` -- which is what makes "capture a
+frame from a static stream" deterministic here. EOF (``close_after``)
+flushes everything (decode is lossless -- see the ``-fflags nobuffer`` note
+in ``device/scrcpy.py``).
+
+Windows caveat for the fake's accept loop: once the scripted payloads are
+exhausted the fake keeps accepting and immediately closes surplus
+connections. If it simply stopped accepting, a reconnecting client would
+complete the TCP handshake into the listen backlog and then wait the whole
+``connect_timeout_s`` for a byte that never comes -- and after 5 such
+zombies Windows RSTs the 6th connect with ``WinError 10061`` ("actively
+refused"), which is how a 100 ms decode stall used to surface as an 80 s
+"cannot connect" failure.
 """
 
 from __future__ import annotations
@@ -46,6 +61,15 @@ RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 BLACK = (0, 0, 0)
 
+#: scrcpy-server's ``MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER`` (100 ms): how
+#: often a held-open fake connection re-sends its last frame (see module doc).
+KEEPALIVE_INTERVAL_S = 0.1
+
+#: Annex B 4-byte start code + SPS NAL header (nal_ref_idc=3, type 7) -- every
+#: frame of our ``-g 1`` clips is an IDR preceded by repeated SPS/PPS, so this
+#: marks each access-unit boundary.
+_SPS_START = b"\x00\x00\x00\x01\x67"
+
 
 # -- clip + polling helpers ------------------------------------------------------
 
@@ -78,6 +102,17 @@ def encode_clip(colors: tuple[tuple[int, int, int], ...]) -> bytes:
     return result.stdout
 
 
+def last_access_unit(payload: bytes) -> bytes:
+    """The final frame (SPS + PPS + IDR slice) of an :func:`encode_clip` payload.
+
+    Re-sending it is a bit-exact model of the device encoder repeating the
+    previous frame on a static screen. ``b""`` when the payload carries no
+    such frame (opaque garbage payloads) -- callers then send no keepalive.
+    """
+    index = payload.rfind(_SPS_START)
+    return payload[index:] if index >= 0 else b""
+
+
 def dominant_channel(frame: np.ndarray) -> int:
     return int(np.argmax(frame.reshape(-1, 3).mean(axis=0)))
 
@@ -105,9 +140,17 @@ class FakeStreamServer:
     """Serves one scripted byte payload per accepted connection.
 
     ``payloads[i]`` goes verbatim to the i-th connection, which is then
-    closed if ``i in close_after`` (EOF -> decoder flush) else held open
-    (silence, like a static board). ``chunk_size`` trickles bytes to
-    exercise partial-read reassembly.
+    closed if ``i in close_after`` (EOF -> decoder flush) else held open like
+    a static board -- and, like the device encoder, a held-open connection
+    keeps re-sending the payload's last frame every
+    :data:`KEEPALIVE_INTERVAL_S` (``repeat_last_frame=False`` gives pure
+    silence instead). ``chunk_size`` trickles bytes to exercise partial-read
+    reassembly.
+
+    Connections beyond the script are accepted and closed at once (counted in
+    ``surplus_connections``) so a client that reconnects past the script fails
+    fast with a clean EOF rather than stalling in the listen backlog (module
+    doc, Windows caveat).
     """
 
     def __init__(
@@ -117,32 +160,62 @@ class FakeStreamServer:
         close_after: frozenset[int] = frozenset(),
         chunk_size: int | None = None,
         chunk_delay_s: float = 0.0,
+        repeat_last_frame: bool = True,
     ) -> None:
         self._payloads = payloads
         self._close_after = close_after
         self._chunk_size = chunk_size
         self._chunk_delay_s = chunk_delay_s
+        self._repeat_last_frame = repeat_last_frame
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._listener.bind(("127.0.0.1", 0))
         self._listener.listen(5)
         self.port: int = self._listener.getsockname()[1]
+        self.surplus_connections = 0
         self._held: list[socket.socket] = []
+        self._stopping = threading.Event()
+        self._keepalive_threads: list[threading.Thread] = []
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
 
+    def _accept(self) -> socket.socket | None:
+        try:
+            conn, _ = self._listener.accept()
+        except OSError:
+            return None  # listener closed by stop()
+        return conn
+
     def _serve(self) -> None:
         for index, payload in enumerate(self._payloads):
-            try:
-                conn, _ = self._listener.accept()
-            except OSError:
-                return  # listener closed by stop()
+            conn = self._accept()
+            if conn is None:
+                return
             with contextlib.suppress(OSError):
                 self._send(conn, payload)
             if index in self._close_after:
                 with contextlib.suppress(OSError):
                     conn.close()
-            else:
-                self._held.append(conn)
+                continue
+            self._held.append(conn)
+            frame = last_access_unit(payload) if self._repeat_last_frame else b""
+            if frame:
+                thread = threading.Thread(target=self._keepalive, args=(conn, frame), daemon=True)
+                self._keepalive_threads.append(thread)
+                thread.start()
+        # Script exhausted: keep draining the accept queue so a late/extra
+        # connection gets an immediate EOF instead of a backlog stall.
+        while (conn := self._accept()) is not None:
+            self.surplus_connections += 1
+            with contextlib.suppress(OSError):
+                conn.close()
+
+    def _keepalive(self, conn: socket.socket, frame: bytes) -> None:
+        """Re-send ``frame`` until stop() or the peer goes away."""
+        while not self._stopping.wait(KEEPALIVE_INTERVAL_S):
+            try:
+                self._send(conn, frame)
+            except OSError:
+                return  # client closed its end (pipeline teardown / death)
 
     def _send(self, conn: socket.socket, payload: bytes) -> None:
         if self._chunk_size is None:
@@ -154,12 +227,15 @@ class FakeStreamServer:
                 time.sleep(self._chunk_delay_s)
 
     def stop(self) -> None:
+        self._stopping.set()
         with contextlib.suppress(OSError):
             self._listener.close()
         for conn in self._held:
             with contextlib.suppress(OSError):
                 conn.close()
         self._thread.join(timeout=2.0)
+        for thread in self._keepalive_threads:
+            thread.join(timeout=2.0)
 
 
 @contextlib.contextmanager
@@ -411,6 +487,49 @@ def test_capture_fails_cleanly_when_stream_never_comes_back() -> None:
                 source.capture()
 
 
+def test_fake_server_drains_connections_past_its_script() -> None:
+    """A reconnect past the scripted payloads must fail FAST with a clean EOF.
+
+    Regression guard for the Windows backlog cascade (module doc): with no
+    payloads the fake accepts and closes every connection at once, so each
+    attempt sees "stream closed immediately" -- never a ``connect_timeout_s``
+    stall in the listen backlog, never ``WinError 10061`` once it is full.
+    """
+    runner = FakeRunner()
+    with serving(FakeStreamServer([])) as server:
+        source = ScrcpySource(_config(server.port, connect_attempts=4), runner=runner)
+        started = time.monotonic()
+        with pytest.raises(ScrcpyError, match="stream closed immediately"):
+            source.start()
+        elapsed = time.monotonic() - started
+        assert server.surplus_connections == 4  # every attempt was accepted + closed
+    assert elapsed < 5.0  # far below 4 x connect_timeout_s (40 s) a backlog stall costs
+    assert runner.stopped == 1
+    assert runner.removed == [server.port]
+
+
+@requires_ffmpeg
+def test_last_access_unit_is_a_decodable_repeat_of_the_final_frame() -> None:
+    """The keepalive frame is the clip's own last IDR and ffmpeg keeps decoding it.
+
+    Six frames go in; with the held-open connection repeating the last
+    (green) frame every 100 ms the decoder emits MORE than six frames and the
+    latest stays green -- i.e. the repeat is a valid continuation of the
+    stream, the same way the device encoder's repeated frame is.
+    """
+    payload = encode_clip((RED,) + (GREEN,) * 5)
+    tail = last_access_unit(payload)
+    assert tail.startswith(_SPS_START)
+    assert 0 < len(tail) < len(payload)
+    assert payload.endswith(tail)
+    assert last_access_unit(b"\x00" * 64) == b""  # opaque garbage: no keepalive
+    server = FakeStreamServer([payload])
+    with serving(server), ScrcpySource(_config(server.port), runner=FakeRunner()) as source:
+        wait_until(lambda: source.frames_decoded > 6)
+        assert dominant_channel(source.capture()) == 1  # still green
+        assert source.pipeline_alive
+
+
 def test_missing_ffmpeg_binary_raises_scrcpy_error() -> None:
     payload = b"\x00" * 64  # never reaches a decoder
     server = FakeStreamServer([payload])
@@ -599,10 +718,7 @@ def test_cropped_pipeline_decodes_crop_sized_frames() -> None:
     width, height = CROP[2], CROP[3]
     payload = encode_clip_at((width, height), (GREEN,) * 6)
     runner = FakeRunner()
-    # One payload per allowed capture attempt (1 + reconnect_attempts=2): with a
-    # single payload, a CPU-starved first attempt (slow ffmpeg spawn under xdist
-    # load) exhausts the fake server and every reconnect is doomed to time out.
-    with serving(FakeStreamServer([payload] * 3)) as server:
+    with serving(FakeStreamServer([payload])) as server:
         cfg = _config(server.port, crop=CROP)
         with ScrcpySource(cfg, runner=runner) as source:
             frame = source.capture()

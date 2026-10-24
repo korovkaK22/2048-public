@@ -82,6 +82,12 @@ class FakeMinicapServer:
     connection is then closed if ``i in close_after`` else held open (so the
     client's freshness ``select`` sees silence, not EOF). ``chunk_size``
     trickles bytes to exercise partial-read handling.
+
+    Connections beyond the script are accepted and closed at once (counted in
+    ``surplus_connections``): if the fake simply stopped accepting, a
+    reconnecting client would sit in the listen backlog for its whole
+    ``connect_timeout_s`` and, once 5 such zombies queue up, Windows RSTs the
+    next connect with ``WinError 10061`` (see ``test_scrcpy.py`` module doc).
     """
 
     def __init__(
@@ -100,16 +106,23 @@ class FakeMinicapServer:
         self._listener.bind(("127.0.0.1", 0))
         self._listener.listen(5)
         self.port: int = self._listener.getsockname()[1]
+        self.surplus_connections = 0
         self._held: list[socket.socket] = []
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
 
+    def _accept(self) -> socket.socket | None:
+        try:
+            conn, _ = self._listener.accept()
+        except OSError:
+            return None  # listener closed by stop()
+        return conn
+
     def _serve(self) -> None:
         for index, payload in enumerate(self._payloads):
-            try:
-                conn, _ = self._listener.accept()
-            except OSError:
-                return  # listener closed by stop()
+            conn = self._accept()
+            if conn is None:
+                return
             with contextlib.suppress(OSError):
                 self._send(conn, payload)
             if index in self._close_after:
@@ -117,6 +130,12 @@ class FakeMinicapServer:
                     conn.close()
             else:
                 self._held.append(conn)
+        # Script exhausted: keep draining the accept queue so a late/extra
+        # connection gets an immediate EOF instead of a backlog stall.
+        while (conn := self._accept()) is not None:
+            self.surplus_connections += 1
+            with contextlib.suppress(OSError):
+                conn.close()
 
     def _send(self, conn: socket.socket, payload: bytes) -> None:
         if self._chunk_size is None:
@@ -312,6 +331,27 @@ def test_connect_failure_raises_minicap_error() -> None:
     )
     with pytest.raises(MinicapError, match="cannot connect"):
         source.start()
+
+
+def test_fake_server_drains_connections_past_its_script() -> None:
+    """Connecting past the script fails FAST with a clean EOF, not a backlog stall.
+
+    Each attempt is accepted and closed at once ("connection closed
+    mid-read" while reading the banner), so the whole start() costs
+    milliseconds -- not ``connect_attempts x connect_timeout_s`` of zombies in
+    the listen backlog followed by ``WinError 10061`` (see the class doc).
+    """
+    runner = FakeRunner()
+    with serving(FakeMinicapServer([])) as server:
+        source = MinicapSource(_config(server.port, connect_attempts=4), runner=runner)
+        started = time.monotonic()
+        with pytest.raises(MinicapError, match=r"cannot connect.*closed mid-read"):
+            source.start()
+        elapsed = time.monotonic() - started
+        assert server.surplus_connections == 4
+    assert elapsed < 5.0  # far below 4 x read_timeout_s (8 s) a backlog stall costs
+    assert runner.stopped == 1
+    assert runner.removed == [server.port]
 
 
 def test_projection_uses_virtual_size_when_set() -> None:
