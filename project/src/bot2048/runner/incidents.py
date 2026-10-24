@@ -39,6 +39,7 @@ __all__ = [
     "MoveRing",
     "create_bundle",
     "write_alert_copy",
+    "write_png",
 ]
 
 DEFAULT_INCIDENTS_ROOT: Path = Path("logs") / "incidents"
@@ -118,7 +119,16 @@ def _write_json(path: Path, data: Any) -> None:
         log.warning("incident.artifact_failed", file=path.name, error=str(exc))
 
 
-def _write_png(path: Path, image: Image) -> None:
+def write_png(path: Path, image: Image) -> None:
+    """Best-effort PNG write of an RGB uint8 frame (the shared artifact writer).
+
+    Public on purpose: the live loop's end-of-game screen
+    (``LiveRunner._save_game_screen``) and the on-error debug bundles
+    (:mod:`bot2048.runner.debug_capture`) reuse it, so every runner-side
+    screenshot artifact shares ONE contract -- a Pillow/array failure is
+    logged at WARN and swallowed, never raised (the write must not mask the
+    problem being documented).
+    """
     try:
         pil_image = importlib.import_module("PIL.Image")
         pil_image.fromarray(np.asarray(image, dtype=np.uint8)).save(path)
@@ -160,9 +170,9 @@ def create_bundle(
         return bundle
 
     if screenshot_before is not None:
-        _write_png(bundle / "screenshot_before.png", screenshot_before)
+        write_png(bundle / "screenshot_before.png", screenshot_before)
     if screenshot_after is not None:
-        _write_png(bundle / "screenshot_after.png", screenshot_after)
+        write_png(bundle / "screenshot_after.png", screenshot_after)
     if uidump_xml is not None:  # only when screencap was blind (AUTH case)
         _write_text(bundle / "uidump.xml", uidump_xml)
     if board is not None:

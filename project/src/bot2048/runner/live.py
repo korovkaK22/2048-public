@@ -1687,7 +1687,7 @@ class LiveRunner:
         path = self.screens_root / f"{game_id}_{end_reason}.png"
         # Reuse the incident PNG writer (same runner subpackage, best-effort:
         # it swallows Pillow/array errors into a WARN, never raises).
-        incidents._write_png(path, frame)
+        incidents.write_png(path, frame)
         log.info(
             "live.game_screen_saved",
             game_id=game_id,

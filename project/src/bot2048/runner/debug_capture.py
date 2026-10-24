@@ -226,8 +226,8 @@ class DebugCapture:
             png_path = self.root / f"{stem}.png"
             png_name: str | None = None
             if frame is not None and getattr(frame, "size", 1) != 0:
-                incidents._write_png(png_path, frame)
-                if png_path.exists():  # _write_png swallows Pillow trouble
+                incidents.write_png(png_path, frame)
+                if png_path.exists():  # write_png swallows Pillow trouble
                     png_name = png_path.name
             json_path = self.root / f"{stem}.json"
             incidents._write_json(

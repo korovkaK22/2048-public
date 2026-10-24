@@ -148,7 +148,7 @@ class TestGameScreenSaved:
     ) -> None:
         saved: list[tuple[Path, Any]] = []
         monkeypatch.setattr(
-            "bot2048.runner.incidents._write_png",
+            "bot2048.runner.incidents.write_png",
             lambda path, image: saved.append((path, image)),
         )
         phone = FakePhone(
@@ -180,7 +180,7 @@ class TestGameScreenSaved:
     ) -> None:
         saved: list[Path] = []
         monkeypatch.setattr(
-            "bot2048.runner.incidents._write_png",
+            "bot2048.runner.incidents.write_png",
             lambda path, image: saved.append(path),
         )
         phone = FakePhone(board=NEARLY_DEAD_BOARD)
@@ -211,7 +211,7 @@ class TestGameScreenSaved:
         """
         saved: list[tuple[Path, Any]] = []
         monkeypatch.setattr(
-            "bot2048.runner.incidents._write_png",
+            "bot2048.runner.incidents.write_png",
             lambda path, image: saved.append((path, image)),
         )
         phone = FakePhone(board=NEARLY_DEAD_BOARD)
@@ -239,7 +239,7 @@ class TestGameScreenSaved:
     ) -> None:
         saved: list[tuple[Path, Any]] = []
         monkeypatch.setattr(
-            "bot2048.runner.incidents._write_png",
+            "bot2048.runner.incidents.write_png",
             lambda path, image: saved.append((path, image)),
         )
         phone = FakePhone(board=NEARLY_DEAD_BOARD)
@@ -267,7 +267,7 @@ class TestMissingFrameIsGraceful:
     ) -> None:
         called: list[Path] = []
         monkeypatch.setattr(
-            "bot2048.runner.incidents._write_png",
+            "bot2048.runner.incidents.write_png",
             lambda path, image: called.append(path),
         )
         phone = FakePhone(board=NEARLY_DEAD_BOARD)
