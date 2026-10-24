@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "id": "farm-baseline",
+  "notes": "engine2048 farm leaf (protocol mode 1), fixed depth 6, adaptive off -- the reference point of every farm experiment, env copied from config/experiments/baseline.json (= the compiled-in defaults of tools/engine2048/farm.go) plus the search knobs the version reply records: CPROB_THRESH at its default 1e-4, GOMAXPROCS=1 and SEARCH_WORKERS=1 as experiment_runner pins per game (the fixed-depth path is serial anyway). Deterministic: a conformance golden candidate.",
+  "engine": {
+    "kind": "engine2048",
+    "weights": null,
+    "env": {
+      "GOMAXPROCS": "1",
+      "BOT2048_SEARCH_WORKERS": "1",
+      "BOT2048_CPROB_THRESH": "0.0001",
+      "BOT2048_FARM_EMPTY_W": "340",
+      "BOT2048_FARM_MERGE_W": "140",
+      "BOT2048_FARM_CORNER_W": "640",
+      "BOT2048_FARM_EDGE_W": "0",
+      "BOT2048_FARM_STAIR_W": "120",
+      "BOT2048_FARM_SNAKE_W": "0.25",
+      "BOT2048_FARM_SNAKE_RATIO": "0.85",
+      "BOT2048_FARM_CORNER_RANK_W": "160",
+      "BOT2048_FARM_CONVEX_W": "80",
+      "BOT2048_FARM_LATE_EMPTY_W": "120",
+      "BOT2048_FARM_LATE_GRAD_MULT": "2",
+      "BOT2048_FARM_LATE_CORNER_RANK_W": "320",
+      "BOT2048_FARM_HOARD_TRIGGER": "99",
+      "BOT2048_FARM_MOBILITY_W": "0",
+      "BOT2048_FARM_MOB_PAIR_PEN": "1",
+      "BOT2048_FARM_QUADCORNER_W": "0",
+      "BOT2048_FARM_QUAD_RATIO": "0.5",
+      "BOT2048_FARM_EMPTY_CURVE_W": "0"
+    }
+  },
+  "search": {
+    "limits": { "max_depth": 6, "budget_ms": null },
+    "guard": { "max_nodes": 50000000, "hang_timeout_s": 60 },
+    "cprob": 0.0001,
+    "adaptive": false,
+    "p4": 0.1,
+    "prefetch": false,
+    "workers": 1,
+    "ladder": null
+  },
+  "farm": true,
+  "stop_exponent": 11
+}

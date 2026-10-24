@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "greedy",
+  "notes": "One-ply greedy (ai/strategies.py GreedyStrategy): the move with the best immediate heuristic/score. Trivial kind: dispatched on the id; search settings are irrelevant and left at defaults.",
+  "engine": { "kind": "trivial", "weights": null, "env": {} },
+  "farm": false,
+  "stop_exponent": 11
+}
