@@ -404,10 +404,12 @@ def test_registry_labels_are_distinct() -> None:
     assert len({s.spec_hash for s in specs}) == len(specs)
 
 
-def test_champion_live_matches_owner_decisions() -> None:
+def test_champion_live_matches_i7_production() -> None:
+    # What the i7 actually ran (live DB runs.args_json, docs/production-state.md):
+    # champion net + record engine, FIXED depth 4, no clock, no ladder.
     spec = load_spec("champion-live")
     assert spec.engine.kind == "ntuple"
-    assert spec.engine.weights == "champion-wall-snap-0316.bin"
+    assert spec.engine.weights == "w-l0.003.bin"
     env = spec.engine.env
     assert env["BOT2048_RECORD_ENGINE"] == "1"
     assert env["BOT2048_EXACT_EMPTIES"] == "8"
@@ -415,21 +417,25 @@ def test_champion_live_matches_owner_decisions() -> None:
     assert env["BOT2048_TARGET_PCONF"] == "0.6"
     assert env["BOT2048_EXACT_EARLYFIRE"] == "300"
     assert env["BOT2048_EXACT_EARLY_EMPTIES"] == "1"
-    # Q10: T0 is time-only as today; the ladder is time-only on every tier.
-    assert spec.search.limits == Limits(max_depth=None, budget_ms=250)
-    assert spec.search.ladder is not None
-    assert spec.search.ladder.late == Limits(None, 2000)
-    assert spec.search.ladder.endgame == Limits(None, 9000)
+    assert spec.search.limits == Limits(max_depth=4, budget_ms=None)
+    assert spec.search.ladder is None
     assert spec.search.prefetch and not spec.farm
     assert set(env) == NTUPLE_ENV_KEYS
 
 
 def test_champion_l0003_is_record_off_twin() -> None:
     live, base = load_spec("champion-live"), load_spec("champion-l0003")
-    assert base.engine.weights == "w-l0.003.bin"
+    assert base.engine.weights == live.engine.weights == "w-l0.003.bin"
     assert base.engine.env["BOT2048_RECORD_ENGINE"] == "0"
     assert base.search == live.search
     assert base.spec_hash != live.spec_hash
+
+
+def test_wall_record_differs_from_live_only_in_net() -> None:
+    live, wall = load_spec("champion-live"), load_spec("wall-record")
+    assert wall.engine.weights == "champion-wall-snap-0316.bin"
+    assert wall.engine.env == live.engine.env
+    assert wall.search == live.search
 
 
 def test_farm_baseline_mirrors_experiments_baseline() -> None:

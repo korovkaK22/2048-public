@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "id": "wall-record",
+  "notes": "Wall net champion-wall-snap-0316.bin + record engine, the sim-validated record config (docs/knowledge/record-is-midgame-mass.md: 0.89% banked >=49601 on a fresh holdout). NOT what the i7 ran live (that was champion-live). Fixed depth 4 per the deploy line.",
+  "engine": {
+    "kind": "ntuple",
+    "weights": "champion-wall-snap-0316.bin",
+    "env": {
+      "GOMAXPROCS": "14",
+      "BOT2048_SEARCH_WORKERS": "12",
+      "BOT2048_CPROB_THRESH": "0.0001",
+      "BOT2048_FARM_EMPTY_W": "340",
+      "BOT2048_FARM_MERGE_W": "140",
+      "BOT2048_FARM_CORNER_W": "640",
+      "BOT2048_FARM_EDGE_W": "0",
+      "BOT2048_FARM_STAIR_W": "120",
+      "BOT2048_FARM_SNAKE_W": "0.25",
+      "BOT2048_FARM_SNAKE_RATIO": "0.85",
+      "BOT2048_FARM_CORNER_RANK_W": "160",
+      "BOT2048_FARM_CONVEX_W": "80",
+      "BOT2048_FARM_LATE_EMPTY_W": "120",
+      "BOT2048_FARM_LATE_GRAD_MULT": "2",
+      "BOT2048_FARM_LATE_CORNER_RANK_W": "320",
+      "BOT2048_FARM_HOARD_TRIGGER": "99",
+      "BOT2048_NTUPLE_MOB_W": "0",
+      "BOT2048_EVAL_MLP": "1",
+      "BOT2048_LEAF_CACHE": "1",
+      "BOT2048_RECORD_ENGINE": "1",
+      "BOT2048_TARGET": "49601",
+      "BOT2048_EXACT_EMPTIES": "8",
+      "BOT2048_EXACT_NODES": "6000000",
+      "BOT2048_TARGET_PCONF": "0.6",
+      "BOT2048_EXACT_EARLYFIRE": "300",
+      "BOT2048_EXACT_EARLY_EMPTIES": "1",
+      "BOT2048_MAXCASH_DEPTH": "8",
+      "BOT2048_SALVAGE_KAPPA": "0"
+    }
+  },
+  "search": {
+    "limits": {
+      "max_depth": 4,
+      "budget_ms": null
+    },
+    "guard": {
+      "max_nodes": 50000000,
+      "hang_timeout_s": 60
+    },
+    "cprob": 0.0001,
+    "adaptive": false,
+    "p4": 0.1,
+    "prefetch": true,
+    "workers": 12,
+    "ladder": null
+  },
+  "farm": false,
+  "stop_exponent": null
+}

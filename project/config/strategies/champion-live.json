@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "id": "champion-live",
-  "notes": "Canonical live net (OWNER DECISION 2026-10-24): ntuple wall net champion-wall-snap-0316.bin + RECORD ENGINE ON with the validated deploy levers (docs/knowledge/record-is-midgame-mass.md:21-22: EMPTIES=8 NODES=6e6 PCONF=0.6 EARLYFIRE=300 EARLY_EMPTIES=1). T0 is TIME-ONLY as today (max_depth null, budget 250 ms = the live default hidden under the swipe cadence); the ladder mirrors LiveConfig's documented starting point (T1 at ply 2067 / 2000 ms, T2 at <= 3 empty / 9000 ms, endgame_after_ply null = inherit the T1 ply), time-only on every tier. UNCERTAIN defaults, pinned to what the Windows live box ran: GOMAXPROCS=14 and SEARCH_WORKERS=12 (ntuple default NumCPU-2) -- the Mac mini host needs its own values (--set engine.env.GOMAXPROCS=10 ... or a profile spec); BOT2048_EVAL_MLP=1 is the compiled-in default (bit-exact leaf, perf-only; the Mac notes prefer 0); BOT2048_MAXCASH_DEPTH=8 and SALVAGE_KAPPA=0 are compiled-in defaults not named in the deploy line. The sim stop rule is null (play to game over -- the record hunt), live stop is inherent in the app.",
+  "notes": "ACTUAL i7 production (verified 2026-10-24 from the live DB games_i7_last2h_20260712_1456.db, runs.args_json: experiment 'ntuple-record', strategy go-expectimax(depth=4), budget_ms null, prefetch true, capture apk, auto_login) + the i7 session summary (docs/production-state.md): champion net w-l0.003.bin, expectimax FIXED depth 4, record engine (HEUR1/HEUR2, earlyfire banker fix, -exact endgame solver, cash-out at 2048). Fixed depth => hardware-independent play. UNVERIFIED: the exact record-lever values the i7 used are not recorded anywhere (provenance gap P1); pinned to the validated deploy levers of docs/knowledge/record-is-midgame-mass.md:21-22. GOMAXPROCS/SEARCH_WORKERS/EVAL_MLP are host tuning, to move into a host profile (Mac mini: EVAL_MLP=0, workers ~ P-core count).",
   "engine": {
     "kind": "ntuple",
-    "weights": "champion-wall-snap-0316.bin",
+    "weights": "w-l0.003.bin",
     "env": {
       "GOMAXPROCS": "14",
       "BOT2048_SEARCH_WORKERS": "12",
@@ -37,20 +37,20 @@
     }
   },
   "search": {
-    "limits": { "max_depth": null, "budget_ms": 250 },
-    "guard": { "max_nodes": 50000000, "hang_timeout_s": 60 },
+    "limits": {
+      "max_depth": 4,
+      "budget_ms": null
+    },
+    "guard": {
+      "max_nodes": 50000000,
+      "hang_timeout_s": 60
+    },
     "cprob": 0.0001,
     "adaptive": false,
     "p4": 0.1,
     "prefetch": true,
     "workers": 12,
-    "ladder": {
-      "late_after_ply": 2067,
-      "late": { "max_depth": null, "budget_ms": 2000 },
-      "endgame_when_empty_le": 3,
-      "endgame_after_ply": null,
-      "endgame": { "max_depth": null, "budget_ms": 9000 }
-    }
+    "ladder": null
   },
   "farm": false,
   "stop_exponent": null

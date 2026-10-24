@@ -79,3 +79,6 @@ worktrees/
 
 # ===== repo-root scratchpad (local throwaway; conclusions go to docs/) =====
 scratchpad/
+
+# Живі БД з попередніх хостів (великі, приватні; опис — docs/production-state.md)
+project/data/live-history/

@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "id": "champion-l0003",
-  "notes": "A/B baseline for champion-live: the original champion net w-l0.003.bin with the RECORD ENGINE OFF (golden endgame). Identical search/ladder/pool settings to champion-live so the only differences are the net and the banker. With RECORD_ENGINE=0 the record levers are inert; they are pinned at the engine's compiled-in defaults (record.go newExactConfig: TARGET 49601, EXACT_EMPTIES 5, EXACT_NODES 3e6, TARGET_PCONF 0.95, EXACT_EARLYFIRE 0, EXACT_EARLY_EMPTIES 2 -- the code says 2 although its comment says 1 -- MAXCASH_DEPTH 8, SALVAGE_KAPPA 0). GOMAXPROCS/SEARCH_WORKERS carry the same Windows-live-box uncertainty as champion-live. fetch_weights.sh must fetch this net too (it currently ships only the wall snapshot).",
+  "notes": "A/B baseline: champion net w-l0.003.bin, record engine OFF, fixed depth 4 like champion-live -- the only difference is the banker/endgame system. With RECORD_ENGINE=0 the record levers are inert; they are pinned at the engine's compiled-in defaults (record.go newExactConfig: TARGET 49601, EXACT_EMPTIES 5, EXACT_NODES 3e6, TARGET_PCONF 0.95, EXACT_EARLYFIRE 0, EXACT_EARLY_EMPTIES 2 -- the code says 2 although its comment says 1 -- MAXCASH_DEPTH 8, SALVAGE_KAPPA 0). GOMAXPROCS/SEARCH_WORKERS carry the same Windows-live-box uncertainty as champion-live. fetch_weights.sh must fetch this net too (it currently ships only the wall snapshot).",
   "engine": {
     "kind": "ntuple",
     "weights": "w-l0.003.bin",
@@ -37,20 +37,20 @@
     }
   },
   "search": {
-    "limits": { "max_depth": null, "budget_ms": 250 },
-    "guard": { "max_nodes": 50000000, "hang_timeout_s": 60 },
+    "limits": {
+      "max_depth": 4,
+      "budget_ms": null
+    },
+    "guard": {
+      "max_nodes": 50000000,
+      "hang_timeout_s": 60
+    },
     "cprob": 0.0001,
     "adaptive": false,
     "p4": 0.1,
     "prefetch": true,
     "workers": 12,
-    "ladder": {
-      "late_after_ply": 2067,
-      "late": { "max_depth": null, "budget_ms": 2000 },
-      "endgame_when_empty_le": 3,
-      "endgame_after_ply": null,
-      "endgame": { "max_depth": null, "budget_ms": 9000 }
-    }
+    "ladder": null
   },
   "farm": false,
   "stop_exponent": null
