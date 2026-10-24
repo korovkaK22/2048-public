@@ -306,6 +306,14 @@ func fold(n *pnode, p2, p4 float64) float64 {
 // caller keeps the previous rung's answer. The driver searcher s is only read
 // (its params + s.pstt); the workers own separate searcher state.
 func (s *searcher) parallelRung(board uint64, deadline time.Time, workers int) (dir int, val float64, completed bool) {
+	return s.parallelRungLimited(board, deadline, true, nil, workers)
+}
+
+// parallelRungLimited is parallelRung with both abort sources explicit: an
+// optional deadline and an optional node cap shared by every worker (protocol
+// 2). The workers' node counts are summed into s.nodes after the join, so the
+// driver searcher's counter is the request total on either path.
+func (s *searcher) parallelRungLimited(board uint64, deadline time.Time, hasDeadline bool, nb *nodeBudget, workers int) (dir int, val float64, completed bool) {
 	b := &parBuilder{
 		depthLimit:  s.depthLimit,
 		cprobThresh: s.cprobThresh,
@@ -372,6 +380,7 @@ func (s *searcher) parallelRung(board uint64, deadline time.Time, workers int) (
 	abort := new(atomic.Bool)
 	var cursor atomic.Int64
 	var wg sync.WaitGroup
+	var nodes atomic.Uint64
 	for w := 0; w < workers; w++ {
 		wg.Add(1)
 		go func() {
@@ -383,10 +392,12 @@ func (s *searcher) parallelRung(board uint64, deadline time.Time, workers int) (
 				p4:          s.p4,
 				leaf:        s.leaf,
 				farm:        s.farm,
-				hasDeadline: true,
+				hasDeadline: hasDeadline,
 				deadline:    deadline,
 				abort:       abort,
+				nodeCap:     nb,
 			}
+			defer func() { nodes.Add(ws.nodes) }()
 			for {
 				i := int(cursor.Add(1)) - 1
 				if i >= len(tasks) || abort.Load() {
@@ -401,8 +412,9 @@ func (s *searcher) parallelRung(board uint64, deadline time.Time, workers int) (
 		}()
 	}
 	wg.Wait()
+	s.nodes += nodes.Load()
 
-	if abort.Load() {
+	if abort.Load() || (nb != nil && nb.exceeded()) {
 		return -1, 0, false
 	}
 	foldRoots()

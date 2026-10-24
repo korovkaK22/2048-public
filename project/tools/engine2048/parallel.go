@@ -478,12 +478,16 @@ func runRootIterationPar(board uint64, cfg iterCfg, tabs *searchTables) (values 
 	abort := new(atomic.Bool)
 	var cursor atomic.Int64
 	var wg sync.WaitGroup
+	var nodes atomic.Uint64
 	for w := 0; w < workers; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			state := cfg.newState(nil, stt, abort)
-			defer func() { searchNodesCounted.Add(state.nodes) }()
+			defer func() {
+				searchNodesCounted.Add(state.nodes)
+				nodes.Add(state.nodes)
+			}()
 			for {
 				i := int(cursor.Add(parPullChunk)) - parPullChunk
 				if i >= len(tasks) || abort.Load() {
@@ -502,6 +506,7 @@ func runRootIterationPar(board uint64, cfg iterCfg, tabs *searchTables) (values 
 		}()
 	}
 	wg.Wait()
+	tabs.lastIterNodes = nodes.Load()
 
 	// Load-balance telemetry, written on the driver goroutine after the join (so
 	// it races with nothing). total/max is the CRITICAL-PATH bound: no scheduler,
