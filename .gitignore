@@ -54,9 +54,11 @@ project/ondevice-apk/**/.gradle/
 local.properties
 .gradle/
 
-# ===== Локальний стан інструментів (не для публічного репо) =====
-.claude/
-CLAUDE.md
+# ===== Локальний стан Claude Code =====
+# CLAUDE.md і .claude/agents/ — у git (репо приватне), щоб правила бачила кожна
+# копія/worktree. Машинно-локальне — ні.
+.claude/settings.local.json
+.claude/worktrees/
 
 # ===== OS =====
 .DS_Store
