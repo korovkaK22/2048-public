@@ -200,6 +200,42 @@ def test_secure_error_holds_on_screencap_until_the_wall_clears() -> None:
     assert source.start_calls == start_calls + 1
 
 
+def test_last_capture_kind_names_the_factual_source_of_each_frame() -> None:
+    # stream OK -> stream error (fallback, not yet disabled) -> black -> stream OK
+    source = FakeSource([_bright(100), OSError("drop"), _black(), _bright(120)])
+    device = FakeDevice([_bright(10), _bright(11)])
+    wrapper = StreamingCaptureDevice(device, source, max_failures=3)
+    assert wrapper.last_capture_kind() is None  # nothing served yet
+    wrapper.screenshot()
+    assert wrapper.last_capture_kind() == "scrcpy"
+    with capture_logs():
+        wrapper.screenshot()  # stream failure -> screencap served
+        assert wrapper.last_capture_kind() == "screencap"
+        wrapper.screenshot()  # black stream frame -> screencap served
+        assert wrapper.last_capture_kind() == "screencap"
+    wrapper.screenshot()  # healthy stream frame again
+    assert wrapper.last_capture_kind() == "scrcpy"
+
+
+def test_last_capture_kind_is_screencap_once_disabled_or_on_secure_hold() -> None:
+    disabled = StreamingCaptureDevice(
+        FakeDevice([_bright(1), _bright(2)]),
+        FakeSource(start_error=OSError("no ffmpeg")),
+        max_failures=1,
+    )
+    with capture_logs():
+        disabled.screenshot()  # first failure disables the stream for good
+        disabled.screenshot()
+    assert disabled.last_capture_kind() == "screencap"
+
+    held = StreamingCaptureDevice(
+        FakeDevice([_bright(3)]), FakeSource([ScrcpySecureError("30+ black frames")])
+    )
+    with capture_logs():
+        held.screenshot()  # secure hold -> screencap (the AUTH sensor path)
+    assert held.last_capture_kind() == "screencap"
+
+
 def test_close_is_idempotent_and_swallows_source_errors() -> None:
     source = FakeSource()
     wrapper = StreamingCaptureDevice(FakeDevice(), source)
