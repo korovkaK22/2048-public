@@ -2,7 +2,7 @@
 
 The module itself imports cleanly without adbutils/Pillow installed --
 the dependency is resolved lazily on :meth:`AdbDevice.connect`, so the rest
-of the code base (sim lab, Docker) never pays for it. Everything that talks
+of the code base (sim lab, CI without a phone) never pays for it. Everything that talks
 to a real phone obviously cannot run until one is plugged in; those methods
 fail with :class:`DeviceError` when not connected.
 
@@ -63,7 +63,7 @@ def _import_adbutils() -> Any:
     except ImportError as exc:
         raise MissingDeviceDependencyError(
             "adbutils is not installed -- install the device extras on the host: "
-            "pip install -e .[device]  (never needed inside Docker)"
+            "pip install -e .[device]"
         ) from exc
 
 

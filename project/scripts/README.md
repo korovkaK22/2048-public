@@ -17,7 +17,6 @@
 |---|---|---|
 | `bench.sh` | прогін усіх стратегій на CLASSIC `SpawnModel` (P(4)=0.10) у `data/bench.db` з фіксованими сідами (base 1000) + sweep ваг depth-3 через `bench_weights.py`, у кінці — `bot2048 db report`. `data/` gitignored, БД не комітити | `bash scripts/bench.sh` (з `project/`) |
 | `bench_weights.py` | драйвер тюнінгу ваг `ExpectimaxStrategy`: ганяє альтернативні `HeuristicWeights` напряму через публічний API (CLI хардкодить `DEFAULT_WEIGHTS`) і пише повну телеметрію — один експеримент на набір ваг | `./.venv/Scripts/python.exe scripts/bench_weights.py --games 60 --depth 3 --seed 1000 --db data/bench.db` |
-| `docker-test.sh` | збирає тест-образ **нативно під архітектуру хоста** (той самий виклик працює на x86-64 і на ARM) і ганяє в ньому pytest. Усе після імені скрипта дописується до `pytest` | `scripts/docker-test.sh` · `scripts/docker-test.sh tests/core` · `IMAGE=bot2048-test:dev scripts/docker-test.sh` |
 
 ## Пристрій, ваги, сповіщення
 

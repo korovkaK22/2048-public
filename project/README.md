@@ -93,29 +93,10 @@ ondevice-apk/      Kotlin: MediaProjection-семплер дошки на тел
 config/experiments/  15 конфігів батч-експериментів
 research/          одноразові дослідницькі скрипти + сирі дані (звіти — ../docs/research/)
 scripts/           setup_adb.sh, fetch_weights.sh, батч-раннери
-docker/            образ для батч-симуляцій
 data/              games.db (gitignored) + calibration.json
 ```
 
-## Docker — тільки батч-симуляції
-
-```bash
-docker compose -f docker/compose.yaml build
-docker compose -f docker/compose.yaml run sim sim run \
-    --strategy expectimax --stop-tile 2048 --games 500 --db data/games.db
-```
-
-`./data` монтується в `/app/data`, тому результати лишаються на хості.
-
-Два образи, і вони різні:
-
-- `docker/Dockerfile` — **лише симуляції на Python**. Go-тулчейна в ньому немає,
-  тому `--strategy go-expectimax` там не запуститься.
-- `Dockerfile` (у корені `project/`) — **тестовий** образ: збирає Go-рушій під
-  архітектуру хоста і ганяє повну суїту однаково на x86-64 і arm64.
-
-Живу гру в контейнері не запускаємо: USB/ADB на Windows у контейнер не
-пробрасується, і `[device]` в sim-образ навмисно не встановлюється.
+Усе (сими, тести, live) працює нативно на хості; Docker у репозиторії немає.
 
 ## Гра на телефоні
 

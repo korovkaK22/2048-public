@@ -6,8 +6,7 @@ The primary live host is the Mac mini — its end-to-end runbook (brew, launchd,
 power, adb key copy, first-hour checklist) is `macos-setup.md`; this file is
 the OS-neutral part.
 
-Live play ALWAYS runs on the host. Docker is only for batch simulations
-(see `project/docker/compose.yaml`).
+Live play ALWAYS runs on the host (there is no container layer in this repo).
 
 Paths below use `$PY` for the venv interpreter: `.venv/bin/python` on
 macOS/Linux, `.venv/Scripts/python.exe` on Windows (Git Bash). `adb` means the

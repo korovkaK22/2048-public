@@ -32,7 +32,7 @@ Windows 10 i7 — дев-машина й резервний live-хост. Ск�
   `$PY -m pytest`, `$PY -m ruff check src tests`, `$PY -m mypy src`, CLI — `$PY -m bot2048.cli`
   (у worktree — саме так, не `.venv/*/bot2048`: той editable з головної копії).
 - Тимчасові файли (тестові скріншоти, чернетки, одноразові дампи) — у `tmp/` в КОРЕНІ репозиторію-папки (`C:\Users\sa095\Desktop\monobank-2048\tmp\`, поза git). Не смітити в `data/` чи `project/`.
-- Docker — ТІЛЬКИ для батч-симуляцій; ADB/live — завжди на хості.
+- Docker у проєкті немає (прибрано 2026-10): і live, і батч-симуляції — нативно на хості.
 
 ## Git та робочий процес
 - **Репозиторій**: git у КОРЕНІ (`C:\Users\sa095\Desktop\monobank-2048`), `origin` → https://github.com/korovkaK22/monobank-2048.
