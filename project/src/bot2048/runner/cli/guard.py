@@ -10,7 +10,7 @@ import typer
 from bot2048.device.adb import AdbDevice
 from bot2048.device.capture import StreamingCaptureDevice
 from bot2048.device.supervisor import Supervisor
-from bot2048.logging_setup import setup_logging, stop_logging
+from bot2048.logging_setup import STOP_TIMEOUT_S, setup_logging, stop_logging
 from bot2048.runner.cli.common import _BuildFn, _DetectFn, err_console
 from bot2048.runner.lifecycle import LockHeldError, RestartLoopError, run_session
 from bot2048.storage.async_recorder import AsyncRecorder
@@ -88,4 +88,13 @@ def _run_guarded(
     finally:
         tg.session_end(ok, reason="" if ok else "див. logs/alerts.jsonl")
         tg.stop(flush_timeout=5.0)
-        stop_logging()  # drain the async log queue so no line is lost on exit
+        # Drain the async log queue so no line is lost on exit -- bounded: a
+        # console frozen for 10 s is abandoned and the loss is said on stderr
+        # (the log pipeline itself is the thing that is stuck).
+        left_behind = stop_logging()
+        if left_behind:
+            err_console.print(
+                f"[yellow]logging: {left_behind} records not drained within "
+                f"{STOP_TIMEOUT_S:.0f}s (console stalled?) -- "
+                "see logs/*.jsonl for the tail[/yellow]"
+            )
