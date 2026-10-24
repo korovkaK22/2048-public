@@ -11,12 +11,12 @@ from typing import Annotated
 import typer
 
 from bot2048.device.supervisor import Supervisor
+from bot2048.recording import Recorder
 from bot2048.runner.cli.common import _connect, _NotifyFn, _Runner, console, err_console
 from bot2048.runner.cli.guard import _run_guarded
 from bot2048.runner.cli.vision_bind import _make_vision
 from bot2048.runner.lifecycle import RunContext
 from bot2048.runner.research import ResearchConfig, ResearchRunner, make_policy
-from bot2048.storage.sqlite_recorder import SqliteRecorder
 from bot2048.vision.calibration import DEFAULT_CALIBRATION_PATH
 
 
@@ -57,7 +57,7 @@ def research(
     device = _connect(serial)
 
     def build(
-        ctx: RunContext, recorder: SqliteRecorder, supervisor: Supervisor, notify: _NotifyFn
+        ctx: RunContext, recorder: Recorder, supervisor: Supervisor, notify: _NotifyFn
     ) -> _Runner:
         return ResearchRunner(
             device=device,

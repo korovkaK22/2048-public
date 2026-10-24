@@ -1083,6 +1083,9 @@ class LiveRunner:
             )
         )
         state.ended = True
+        # Durability of the finished game. With the live AsyncRecorder this
+        # only enqueues a flush marker (the writer thread persists; the next
+        # game's start is not held up); the plain SqliteRecorder flushes inline.
         try:
             self.recorder.flush()
         except StorageError as exc:

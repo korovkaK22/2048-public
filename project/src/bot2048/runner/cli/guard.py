@@ -13,6 +13,7 @@ from bot2048.device.supervisor import Supervisor
 from bot2048.logging_setup import setup_logging, stop_logging
 from bot2048.runner.cli.common import _BuildFn, _DetectFn, err_console
 from bot2048.runner.lifecycle import LockHeldError, RestartLoopError, run_session
+from bot2048.storage.async_recorder import AsyncRecorder
 from bot2048.storage.sqlite_recorder import ExperimentMeta, SqliteRecorder
 from bot2048.tgnotify import get_notifier
 
@@ -40,6 +41,15 @@ def _run_guarded(
     per-move hot-path debug lines are gated off unless ``verbose`` selects
     DEBUG; :func:`stop_logging` in the ``finally`` flushes the background queue
     so a FATAL loses nothing.
+
+    Live telemetry goes through :class:`AsyncRecorder` (one background SQLite
+    writer thread; the loop only enqueues -- design-strategy-logging §5.2). The
+    ``SqliteRecorder`` is built BY the writer thread (factory), so its
+    connection never crosses threads. Shutdown order: ``recorder.close()``
+    (flush + join, <= 5 s) runs in the inner ``finally`` -- i.e. BEFORE
+    ``run_session`` closes the run row (``ops.end_run``), before ``tg.stop`` and
+    before ``stop_logging`` -- on the clean, FATAL and CRASH paths alike, since
+    the crash handling lives in ``run_session.__exit__``.
     """
     setup_logging(json_logs=True, level=logging.DEBUG if verbose else logging.INFO)
     tg = get_notifier()
@@ -57,20 +67,20 @@ def _run_guarded(
                 ops=ctx.ops,
                 ring=ctx.ring,
             )
-            recorder = SqliteRecorder(
-                db,
-                ExperimentMeta(
-                    experiment_id=experiment,
-                    kind="live",
-                    strategy=strategy_name,
-                    params=dict(params),
-                ),
+            meta = ExperimentMeta(
+                experiment_id=experiment,
+                kind="live",
+                strategy=strategy_name,
+                params=dict(params),
             )
+            # Opening failures surface here, synchronously, exactly as the
+            # plain recorder's did (the DB must work at startup).
+            recorder = AsyncRecorder(lambda: SqliteRecorder(db, meta))
             try:
                 runner = build(ctx, recorder, supervisor, tg.notify)
                 runner.run()
             finally:
-                recorder.close()
+                recorder.close()  # flush + join the writer BEFORE ops.end_run
         ok = True
     except (LockHeldError, RestartLoopError) as exc:
         err_console.print(f"[red]refusing to start:[/red] {exc}")
