@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchAgent template for the TELEGRAM WATCHER (python -m bot2048.tgnotify watch).
+  Rendered by scripts/macos/install.sh: @REPO@ -> repo root, @HOME@ -> $HOME.
+
+  KeepAlive=true: the watcher is the reserve alert path, so it must outlive the
+  runner and be respawned if it ever dies (ThrottleInterval bounds a crash loop
+  to one start per 30 s). ProcessType=Background keeps it off the P-cores and
+  out of the runner's way.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.bot2048.watch</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>@REPO@/project/scripts/watch.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>@REPO@/project</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>@HOME@</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
+        <key>PYTHONUTF8</key>
+        <string>1</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>ExitTimeOut</key>
+    <integer>15</integer>
+
+    <key>StandardOutPath</key>
+    <string>@REPO@/project/logs/launchd-watch.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>@REPO@/project/logs/launchd-watch.err.log</string>
+</dict>
+</plist>
