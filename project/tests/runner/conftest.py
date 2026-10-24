@@ -374,6 +374,9 @@ def make_harness(
         bg_detect=bg_detect,
         incidents_root=tmp_path / "incidents",
         screens_root=tmp_path / "game-screens",
+        # Every runtime artifact root under tmp_path: a test run must never
+        # litter the real project/logs/ (debug-captures used to leak there).
+        debug_root=tmp_path / "debug-captures",
         sleep=lambda _s: None,
         clock=_FakeClock(),
     )
